@@ -8,7 +8,7 @@ import type {
 
 /**
  * Formal HUD & UI Design Rules established for the 3D / WebXR Poker Experience.
- * Enforced both in-app (Inspector Drawer) and in the automated Playwright dogfooding harness.
+ * Enforced programmatically via window.__POKER_DOGFOOD__.runHudUiAudit() and `npm run verify:hud`.
  */
 export const HUD_UI_RULES: HudUiRuleSpec[] = [
   {
@@ -16,7 +16,7 @@ export const HUD_UI_RULES: HudUiRuleSpec[] = [
     code: 'HUD-R1',
     category: 'Spatial Safe-Zone',
     title: '3D Center Table & Character Safe-Zone (0% Occlusion)',
-    rule: 'Persistent 2D HUD zones (top-bar, bottom-dock, left-utility, showdown-banner) must occupy only the viewport perimeter and maintain 0 px² overlap with the 3D Community Cards, Center Pot, Golden Betting Ring, Seat #0 3D Hole Cards & Bank Chips, and all 5 3D Character Heads in seat0_pov.',
+    rule: 'Persistent 2D HUD zones (top-bar, bottom-dock, left-utility, showdown-banner) must occupy only the viewport perimeter and maintain 0 px² overlap with the 3D Community Cards, Center Pot, Golden Betting Ring, Seat #0 3D Hole Cards & Bank Chips, and all 5 3D Character Heads & Torsos in seat0_pov.',
     threshold: 'overlapArea == 0 px² in seat0_pov',
   },
   {
@@ -40,7 +40,7 @@ export const HUD_UI_RULES: HudUiRuleSpec[] = [
     code: 'HUD-R4',
     category: 'Layout Stability',
     title: 'Zero 2D Zone Collision & Single Out-of-Flow Drawer Mutex',
-    rule: 'Persistent 2D HUD zones must have 0 px² pairwise overlap. At most 1 secondary drawer (gto | settings | inspector | xr) may be open at a time, and drawers must be fixed/absolute out-of-flow overlays causing 0px layout shift on perimeter bars.',
+    rule: 'Persistent 2D HUD zones must have 0 px² pairwise overlap. At most 1 secondary drawer (gto | settings | xr) may be open at a time, and drawers must be fixed/absolute out-of-flow overlays causing 0px layout shift on perimeter bars.',
     threshold: 'zoneOverlap == 0 px² && openDrawers <= 1 && outOfFlow == true',
   },
   {
@@ -143,6 +143,7 @@ export function runHudUiAudit(
       { label: 'hero3DHoleCards', rect: tableBounds.heroHoleCardsRect },
       { label: 'hero3DBankChips', rect: tableBounds.heroBankChipsRect },
       ...charBounds.map((c) => ({ label: `${c.role}_head`, rect: c.headRect })),
+      ...charBounds.map((c) => ({ label: `${c.role}_torso`, rect: c.torsoRect })),
       ...tableBounds.aiPlaques.map((p) => ({ label: `${p.name}_plaque`, rect: p.rect })),
     ];
 
@@ -175,6 +176,10 @@ export function runHudUiAudit(
   const topBarUtilityButtonCount = topBarUtilityBtns.length;
 
   // 3. Check HUD-R3: Perimeter Geometry Budget
+  // In the in-game 2D HUD mode both perimeter bars must actually render
+  const perimeterBarsPresentOk =
+    !opts.show2DHUD || opts.isInXR || !scene || scene.isTitleMode ||
+    (Boolean(zoneRects['top-bar']) && Boolean(zoneRects['bottom-dock']));
   const topBarSlimOk = topBarHeightPx <= 60;
   const bottomDockSlimOk = bottomDockHeightPx <= 110;
   const coverageOk = hudViewportCoveragePct <= 20.0;
@@ -265,8 +270,8 @@ export function runHudUiAudit(
       id: 'perimeter_geometry_budget',
       category: 'Viewport Ergonomics',
       label: 'HUD-R3: Slim Perimeter Bars (Top <= 60px, Bottom <= 110px, Coverage <= 20%)',
-      passed: topBarSlimOk && bottomDockSlimOk && coverageOk,
-      metric: `topBar = ${topBarHeightPx}px (<=60), bottomDock = ${bottomDockHeightPx}px (<=110), coverage = ${hudViewportCoveragePct}% (<=20%)`,
+      passed: perimeterBarsPresentOk && topBarSlimOk && bottomDockSlimOk && coverageOk,
+      metric: `barsPresent = ${perimeterBarsPresentOk}, topBar = ${topBarHeightPx}px (<=60), bottomDock = ${bottomDockHeightPx}px (<=110), coverage = ${hudViewportCoveragePct}% (<=20%)`,
     },
     {
       id: 'hud_zone_mutex_and_zero_overlap',

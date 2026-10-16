@@ -233,11 +233,14 @@ async function runUxGuidelineHarness() {
             '[data-ux-panel="top-right-menu"]',
             '[data-ux-panel="bottom-action-dock"]',
             '[data-ux-panel="showdown-banner"]',
+            '[data-hud-zone]',
           ];
           const hudPanels = [];
           for (const sel of hudPanelSelectors) {
-            const el = document.querySelector(sel);
-            if (el && isElementVisible(el)) {
+            for (const el of document.querySelectorAll(sel)) {
+              if (!isElementVisible(el)) continue;
+              // The Pure 3D "Show 2D HUD" restore pill is the only way back to the 2D HUD
+              if (el.querySelector('[data-testid="hud-pure3d-toggle"]')) continue;
               const r = el.getBoundingClientRect();
               hudPanels.push({
                 selector: sel,

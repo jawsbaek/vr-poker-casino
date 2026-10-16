@@ -7,14 +7,16 @@
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "tsc && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 3000",
-    "deploy": "! find public/models -name '*.glb' -size +5M | grep . || (echo 'GLB over 5MB: compress with gltf-transform optimize --compress meshopt --texture-compress webp' && false) && npm run build && gcloud run deploy vr-poker-casino --source . --region asia-northeast3 --allow-unauthenticated --port 8080 --quiet",
+    "deploy": "! find public/models -name '*.glb' -size +5M | grep . || (echo 'GLB over 5MB: run npm run models:compress on a fresh Blender export' && false) && npm run build && gcloud run deploy vr-poker-casino --source . --region asia-northeast3 --allow-unauthenticated --port 8080 --quiet",
     "dogfood": "node scripts/dogfood_visual_loop.mjs",
     "verify:ux": "node scripts/verify_ux_guideline_harness.mjs",
     "verify:algo": "node scripts/verify_algorithms.mjs",
     "verify:hud": "node scripts/verify_poker_hud.mjs",
     "blender:generate": "/Applications/Blender.app/Contents/MacOS/Blender -b -P scripts/blender_generate_vip_assets.py",
-    "blender:dealer": "/Applications/Blender.app/Contents/MacOS/Blender -b -P scripts/blender_generate_dealer.py",
-    "blender:ai-players": "/Applications/Blender.app/Contents/MacOS/Blender -b -P scripts/blender_generate_ai_players.py",
+    "blender:dealer": "/Applications/Blender.app/Contents/MacOS/Blender -b -P scripts/blender_generate_dealer.py && npm run models:compress",
+    "blender:ai-players": "/Applications/Blender.app/Contents/MacOS/Blender -b -P scripts/blender_generate_ai_players.py && npm run models:compress",
+    "blender:realistic": "/Applications/Blender.app/Contents/MacOS/Blender -b -P scripts/blender_generate_all_realistic.py && npm run models:compress",
+    "models:compress": "for f in vip_ai_players vip_dealer; do gltf-transform optimize public/models/$f.glb public/models/$f.glb --compress meshopt --texture-compress webp --texture-size 1024 --join false --flatten false --instance false --palette false --simplify false || exit 1; done",
     "video:demo": "node scripts/record_demo_video.mjs"
   },
   "dependencies": {
@@ -28,6 +30,7 @@
     "three": "^0.169.0"
   },
   "devDependencies": {
+    "@gltf-transform/cli": "4.5.1",
     "@types/canvas-confetti": "^1.9.0",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",

@@ -241,23 +241,7 @@ async function runDogfoodLoop() {
       console.error(`❌ Active Turn HUD/UI Rules Audit Failed:`, failedHud);
     }
 
-    // 2. Open the in-app "HUD/UI Rules & 3D Dogfood Inspector" drawer and capture it
-    const inspectorBtn = page.locator('[data-testid="hud-inspector-trigger"]');
-    if ((await inspectorBtn.count()) > 0) {
-      await inspectorBtn.click();
-      await page.waitForTimeout(450);
-      const inspectorDrawerAudit = await page.evaluate(() => window.__POKER_DOGFOOD__.runHudUiAudit());
-      const inspectorShotPath = path.join(OUT_DIR, '10_in_app_3d_dogfood_inspector_drawer.png');
-      await page.screenshot({ path: inspectorShotPath });
-      console.log(
-        `📸 Captured: ${path.basename(inspectorShotPath)} | Inspector Drawer HUD/UI=${inspectorDrawerAudit?.allPassed} (OpenDrawers=${inspectorDrawerAudit?.openDrawerCount})`
-      );
-      // Close inspector drawer before auto-pilot
-      await inspectorBtn.click();
-      await page.waitForTimeout(250);
-    }
-
-    // 3. Exercise the Auto-Pilot Bot at 5x speed for live autonomous gameplay dogfooding
+    // 2. Exercise the Auto-Pilot Bot at 5x speed for live autonomous gameplay dogfooding
     console.log('🤖 Running Auto-Pilot Bot at 5x speed for 3.5 seconds of live gameplay...');
     await page.evaluate(() => {
       const api = window.__POKER_DOGFOOD__;

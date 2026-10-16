@@ -33,25 +33,21 @@
    - Each character's nameplate (`plaqueMesh`) sits low on the front table rail, in front of their hands (`y = 0.19m, z = 0.28m`). Head height is about `y ≈ 0.54m`, so the plaque never reaches the face.
 3. 2D HUD at the screen edges (0% character coverage from `seat0_pov`)
    - Top left (`Top-Left`): one status line with street, hand number, blind level and `TOTAL POT` (`y <= 64px`).
-   - Top right (`Top-Right`): one menu and settings button (`Menu / Settings`).
+   - Top right (`Top-Right`): at most 4 utility buttons (currently `Pure 3D`, `GTO`, `Table & Cam`).
    - Bottom center (`Bottom Dock`): hole-card Peek controls, a compact GTO strip, and the betting buttons (`Fold`, `Check/Call`, `Bet/Raise`).
 
-## 4. At most 6 buttons on screen
+## 4. At most 12 controls on screen
 
-1. Button limit on the main HUD
-   - In the default view, with drawers closed, the main HUD shows at most 6 visible `<button>` elements:
-     1. `Menu / Settings` (opens the drawer, top right)
-     2. `Peek` (hold to see hole cards)
-     3. `Lock Peek` (keeps hole cards revealed)
-     4. `Fold` (hidden at showdown)
-     5. `Check / Call` (hidden at showdown)
-     6. `Raise / Bet` (replaced by `Deal Next Hand` at showdown)
-2. Everything else goes in the drawer
-   - The top-right `Menu / Settings` drawer holds the camera presets and scenario loader (`3D Inspector`), the `GTO Solver` 13×13 range matrix, `Table Talk` emotes, manual chip toss (`$1–$100`), the audio, music and voice toggles, `Vision Pro (.USDZ)`, and `WebXR` entry.
-3. Only one HUD at a time (`hud_2d_3d_mutual_exclusivity`)
-   - The 2D DOM HUD (`[data-ux-layer="main-hud"]`) and the 3D rim buttons on the Seat #0 leather armrest (`fold`, `call`, `raise`, `peek_or_next`) are never shown together:
+1. Control limit on the in-game HUD (HUD-R2)
+   - In the default view, with drawers closed, the persistent HUD zones (`[data-hud-zone]`) show at most 12 visible interactive controls (`button`, `input`, `select`), and the top-right bar shows at most 4 utility buttons.
+   - On the hero's turn the bottom dock currently holds Peek, the bet-size presets and slider, and `Fold` / `Check-Call` / `Bet-Raise` (9 controls in `seat0_pov`).
+2. Everything else goes in a drawer
+   - Secondary tools open as one out-of-flow drawer at a time (`gto`, `settings`, `xr`): the `GTO Solver` 13×13 range matrix, camera presets, audio, music and voice toggles, `Vision Pro (.USDZ)`, and `WebXR` entry.
+   - The HUD/UI rule results are not shown in the UI; they are checked by code (`window.__POKER_DOGFOOD__.runHudUiAudit()`, `npm run verify:hud`).
+3. Only one HUD at a time (`hud_2d_3d_mutual_exclusivity`, HUD-R5)
+   - The 2D DOM HUD (`[data-hud-zone]`) and the 3D rim buttons on the Seat #0 leather armrest (`fold`, `call`, `raise`, `peek_or_next`) are never shown together:
      - Desktop 2D mode (`show2DHUD === true && !isInXR`): the 2D edge panels render. All 4 rim button meshes are hidden (`mesh.visible = false`) and excluded from pointer and controller raycasting.
-     - Pure 3D mode (`show2DHUD === false`) or WebXR (`isInXR === true`): every 2D panel (`top-left-status`, `bottom-action-dock`, etc.) is unmounted, leaving `0` visible panels. The 4 rim buttons on the armrest are visible (`mesh.visible = true`) and respond to raycasts.
+     - Pure 3D mode (`show2DHUD === false`) or WebXR (`isInXR === true`): every 2D HUD zone (`top-bar`, `bottom-dock`, etc.) is unmounted, leaving `0` visible panels apart from the small `Show 2D HUD` restore pill (`hud-pure3d-toggle`). The 4 rim buttons on the armrest are visible (`mesh.visible = true`) and respond to raycasts.
 
 ## 5. Color: obsidian plus one gold accent
 
@@ -62,7 +58,7 @@
 2. No neon or multicolor badges on the main HUD or the 3D plaques
    - Saturated or neon colors are not allowed there: cyan (`cyan`), purple (`purple`), saturated blue (`blue`), orange (`orange`), neon emerald (`emerald`), and neon rose (`rose`).
 
-## 6. Automated checks (`npm run verify:ux`)
+## 6. Automated checks (`npm run verify:ux`, `npm run verify:hud`)
 
 | Tier | Check ID | Pass criteria |
 | :--- | :--- | :--- |
@@ -70,8 +66,9 @@
 | | `character_human_presence_rig` | All 5 characters have `MeshPhysicalMaterial` skin and cornea shading, blink and gaze rigs, and 5-finger articulated hands |
 | | `webgl_draw_call_budget` | `Draw Calls <= 450` across all camera presets and scenarios |
 | | `spatial_layout_clearance` | `0` clipping or overlap violations between 3D cards, chip stacks and plaques |
-| | `hud_2d_3d_mutual_exclusivity` | `0` visible 3D rim buttons when `show2DHUD === true`; `4` visible rim buttons and `0` 2D HUD panels when `show2DHUD === false` or `isInXR === true` |
-| Tier 2: sightlines and minimalism | `zero_character_sightline_occlusion` | `0%` overlap between the projected 2D bounding boxes of character heads and torsos (`seat0_pov`) and visible 2D HUD panels |
-| | `primary_action_button_cap` | Visible `<button>` count on the main HUD `<= 6` |
+| | `hud_2d_3d_mutual_exclusivity` | `4` visible rim buttons and `0` 2D HUD panels when `show2DHUD === false` or `isInXR === true` (2D mode: HUD-R3 bars present + HUD-R5 rim buttons hidden) |
+| Tier 2: sightlines and minimalism | HUD-R1 `center_safe_zone_unobstructed` (`verify:hud`) | `0 px²` overlap between 2D HUD zones and the board, pot, betting ring, hero cards and chips, AI plaques, and every character's head and torso (`seat0_pov`) |
+| | HUD-R2 `visible_action_element_cap` (`verify:hud`) | `<= 12` visible HUD controls and `<= 4` top-bar utilities |
+| | HUD-R3 `perimeter_geometry_budget` (`verify:hud`) | Top bar and bottom dock both render in 2D mode; top `<= 60px`, bottom `<= 110px`, coverage `<= 20%` |
 | | `monochrome_gold_color_restraint` | `0` banned saturated or neon colors in the computed styles (`color`, `backgroundColor`, `borderColor`) of visible main HUD elements |
 | Tier 3: visual proof and report | `multi_scenario_visual_proof` | Captures in 2D HUD mode, pure 3D HUD mode, showdown, and character close-up, with a JSON report (`allPassed: true`) |
