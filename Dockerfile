@@ -17,4 +17,4 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 8080
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/bin/sh", "-c", "printf 'window.__RUNTIME_CONFIG__ = { GEMINI_API_KEY: \"%s\" };\\n' \"${GEMINI_API_KEY:-}\" > /usr/share/nginx/html/runtime-config.js && exec nginx -g 'daemon off;'"]

@@ -31,6 +31,7 @@ export const XR_HAND_JOINTS: XRHandJoint[] = [
 export class WebXRManager {
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
+  public cameraRig: THREE.Group;
   private currentSession: XRSession | null = null;
   private referenceSpace: XRReferenceSpace | null = null;
 
@@ -53,11 +54,15 @@ export class WebXRManager {
   public onRayDown?: (ray: THREE.Ray) => void;
   public onRayMove?: (ray: THREE.Ray) => void;
   public onRayUp?: (ray: THREE.Ray) => void;
-  public onSessionStateChange?: (presenting: boolean) => void;
+  public onSessionStateChange?: (presenting: boolean, isFloorSpace?: boolean) => void;
 
-  constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene) {
+  constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, cameraRig?: THREE.Group) {
     this.renderer = renderer;
     this.scene = scene;
+    this.cameraRig = cameraRig || new THREE.Group();
+    if (!cameraRig) {
+      this.scene.add(this.cameraRig);
+    }
 
     // Single InstancedMesh for 50 optical hand joints (25 per hand) to preserve draw-call budget
     const jointGeo = new THREE.SphereGeometry(1, 10, 10);
@@ -70,7 +75,7 @@ export class WebXRManager {
     this.handJointsInstanced.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.handJointsInstanced.count = 0;
     this.handJointsInstanced.frustumCulled = false;
-    this.scene.add(this.handJointsInstanced);
+    this.cameraRig.add(this.handJointsInstanced);
 
     this.checkSupport();
     this.setupControllers();
@@ -92,6 +97,7 @@ export class WebXRManager {
   }
 
   private extractControllerRay(controller: THREE.XRTargetRaySpace): THREE.Ray {
+    controller.updateWorldMatrix(true, false);
     const tempMatrix = new THREE.Matrix4();
     tempMatrix.identity().extractRotation(controller.matrixWorld);
     const origin = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
@@ -124,7 +130,7 @@ export class WebXRManager {
         this.onRayUp?.(ray);
       });
 
-      this.scene.add(controller);
+      this.cameraRig.add(controller);
       this.controllers.push(controller);
 
       // Gold luminous pointer ray
@@ -151,7 +157,7 @@ export class WebXRManager {
       });
       const gripSphere = new THREE.Mesh(gripPinchSphereGeo, gripMat);
       grip.add(gripSphere);
-      this.scene.add(grip);
+      this.cameraRig.add(grip);
       this.controllerGrips.push(grip);
     }
   }
@@ -208,9 +214,13 @@ export class WebXRManager {
         if (thumbTipPos && indexTipPos) {
           const dist = thumbTipPos.distanceTo(indexTipPos);
           const midpoint = thumbTipPos.clone().add(indexTipPos).multiplyScalar(0.5);
-          // Construct downward/forward ray from pinch point toward table surface
+          // Construct downward/forward ray from pinch point toward table surface in world space
+          this.cameraRig.updateWorldMatrix(true, false);
+          const pinchOrigin = new THREE.Vector3(midpoint.x, midpoint.y + 0.15, midpoint.z).applyMatrix4(
+            this.cameraRig.matrixWorld
+          );
           const pinchRay = new THREE.Ray(
-            new THREE.Vector3(midpoint.x, midpoint.y + 0.15, midpoint.z),
+            pinchOrigin,
             new THREE.Vector3(0, -1, 0)
           );
 
@@ -247,22 +257,24 @@ export class WebXRManager {
       this.renderer.xr.setReferenceSpaceType('local-floor');
       await this.renderer.xr.setSession(session);
 
+      let isFloorSpace = true;
       try {
         this.referenceSpace = await session.requestReferenceSpace('local-floor');
       } catch {
         this.referenceSpace = await session.requestReferenceSpace('local');
+        isFloorSpace = false;
       }
 
       this.currentSession = session;
       this.isPresenting = true;
-      this.onSessionStateChange?.(true);
+      this.onSessionStateChange?.(true, isFloorSpace);
 
       session.addEventListener('end', () => {
         this.currentSession = null;
         this.referenceSpace = null;
         this.isPresenting = false;
         this.handJointsInstanced.count = 0;
-        this.onSessionStateChange?.(false);
+        this.onSessionStateChange?.(false, false);
       });
 
       return true;

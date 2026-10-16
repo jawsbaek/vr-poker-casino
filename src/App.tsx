@@ -19,6 +19,9 @@ import {
   PhysicalActionType,
   GTOSolverMode,
   HandDecisionRecord,
+  CameraPresetId,
+  DogfoodScenarioId,
+  SpatialAuditReport,
 } from './types/poker';
 import {
   createDeck,
@@ -60,6 +63,7 @@ export const App: React.FC = () => {
   const xrManagerRef = useRef<WebXRManager | null>(null);
   const aiTimeoutRef = useRef<number | null>(null);
   const runoutTimeoutRef = useRef<number | null>(null);
+  const autoPilotTimeoutRef = useRef<number | null>(null);
 
   const [isTitleMode, setIsTitleMode] = useState(true);
   const [players, setPlayers] = useState<PlayerState[]>(createInitialPlayers);
@@ -94,6 +98,16 @@ export const App: React.FC = () => {
   const [solverMode, setSolverMode] = useState<GTOSolverMode>('exploit');
   const [decisionHistory, setDecisionHistory] = useState<HandDecisionRecord[]>([]);
   const [lastDecisionRecord, setLastDecisionRecord] = useState<HandDecisionRecord | null>(null);
+
+  // 3D Visual Feedback & Dogfooding Inspector State
+  const [cameraPreset, setCameraPreset] = useState<CameraPresetId>('seat0_pov');
+  const [activeScenario, setActiveScenario] = useState<DogfoodScenarioId | null>(null);
+  const [isAutoPilot, setIsAutoPilot] = useState<boolean>(false);
+  const [speedMultiplier, setSpeedMultiplier] = useState<1 | 2 | 5>(1);
+  const [show2DHUD, setShow2DHUD] = useState<boolean>(true);
+  const [debugOverlayEnabled, setDebugOverlayEnabled] = useState<boolean>(false);
+  const [spatialAudit, setSpatialAudit] = useState<SpatialAuditReport | null>(null);
+
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome_dealer',
@@ -121,6 +135,10 @@ export const App: React.FC = () => {
   isTitleModeRef.current = isTitleMode;
   const solverModeRef = useRef(solverMode);
   solverModeRef.current = solverMode;
+  const isAutoPilotRef = useRef(isAutoPilot);
+  isAutoPilotRef.current = isAutoPilot;
+  const speedMultiplierRef = useRef(speedMultiplier);
+  speedMultiplierRef.current = speedMultiplier;
 
   const appendChatMessage = useCallback(
     (
@@ -154,6 +172,10 @@ export const App: React.FC = () => {
     if (runoutTimeoutRef.current !== null) {
       window.clearTimeout(runoutTimeoutRef.current);
       runoutTimeoutRef.current = null;
+    }
+    if (autoPilotTimeoutRef.current !== null) {
+      window.clearTimeout(autoPilotTimeoutRef.current);
+      autoPilotTimeoutRef.current = null;
     }
   };
 
@@ -213,6 +235,7 @@ export const App: React.FC = () => {
       scene.updateSpatialHUD(nextTable, nextPlayers[0], effectivePeek);
       scene.setPeekProgress(effectivePeek ? 1 : 0, nextPlayers[0]?.cards);
       setDrawCalls(scene.getDrawCalls());
+      setSpatialAudit(scene.runSpatialAudit());
     },
     []
   );
@@ -598,7 +621,7 @@ export const App: React.FC = () => {
         syncSceneAll(updatedTable, pList);
 
         dealNextRunoutStreet(updatedTable, pList);
-      }, 1150);
+      }, Math.round(1150 / speedMultiplierRef.current));
     };
 
     dealNextRunoutStreet(runoutTable, revealedPlayers);
@@ -1136,7 +1159,8 @@ export const App: React.FC = () => {
     if (!ai || ai.isHuman || ai.folded || ai.allIn || ai.eliminated) return;
 
     const isBaoScrolling = ai.persona === 'heavy_phone' && ai.isWatchingPhone;
-    const delay = isBaoScrolling ? 1250 + Math.random() * 650 : 650 + Math.random() * 650;
+    const baseDelay = isBaoScrolling ? 1250 + Math.random() * 650 : 650 + Math.random() * 650;
+    const delay = Math.max(120, Math.round(baseDelay / speedMultiplierRef.current));
 
     if (isBaoScrolling && !isTitleModeRef.current) {
       pokerAudio.playPhoneReelLeak();
@@ -1195,6 +1219,598 @@ export const App: React.FC = () => {
     [appendChatMessage]
   );
 
+  // ============================================================================
+  // 3D VISUAL FEEDBACK & DETERMINISTIC DOGFOODING HARNESS
+  // ============================================================================
+
+  const handleChangeCameraPreset = useCallback((preset: CameraPresetId) => {
+    setCameraPreset(preset);
+    sceneRef.current?.setCameraPreset(preset);
+  }, []);
+
+  const handleToggleDebugOverlay = useCallback(() => {
+    setDebugOverlayEnabled((prev) => {
+      const next = !prev;
+      sceneRef.current?.setDebugOverlay(next);
+      return next;
+    });
+  }, []);
+
+  const handleRefreshSpatialAudit = useCallback(() => {
+    if (sceneRef.current) {
+      setSpatialAudit(sceneRef.current.runSpatialAudit());
+    }
+  }, []);
+
+  /**
+   * Deterministically loads any of the 7 key 3D visual scenarios for inspection & dogfooding
+   */
+  const handleLoadScenario = useCallback(
+    (scenario: DogfoodScenarioId) => {
+      clearTimers();
+      setIsAutoPilot(false);
+      isAutoPilotRef.current = false;
+      setActiveScenario(scenario);
+
+      // Exit 3D title mode so gameplay cameras and interactions are unlocked
+      setIsTitleMode(false);
+      isTitleModeRef.current = false;
+      sceneRef.current?.setTitleMode(false);
+      sceneRef.current?.clearCards();
+
+      const basePlayers = createInitialPlayers();
+      const now = Date.now();
+      const rankMap: Record<string, Card['rank']> = {
+        '2': 2,
+        '3': 3,
+        '4': 4,
+        '5': 5,
+        '6': 6,
+        '7': 7,
+        '8': 8,
+        '9': 9,
+        '10': 10,
+        J: 11,
+        Q: 12,
+        K: 13,
+        A: 14,
+      };
+      const makeCard = (
+        rankLabel: string,
+        suit: Card['suit'],
+        faceUp: boolean = false
+      ): Card => ({
+        id: `${rankLabel}_${suit}_df_${scenario}`,
+        rank: rankMap[rankLabel] || 14,
+        suit,
+        faceUp,
+      });
+
+      let nextPlayers: PlayerState[] = basePlayers.map((p) => ({
+        ...p,
+        chips: 190,
+        currentBet: 0,
+        totalHandBet: 10,
+        folded: false,
+        allIn: false,
+        eliminated: false,
+        isTurn: false,
+        hasActedThisRound: false,
+        activeTell: 'none',
+        isWatchingPhone: p.persona === 'heavy_phone',
+      }));
+
+      let nextTable: TableState = {
+        phase: 'flop',
+        pot: 30,
+        sidePots: [],
+        currentHighBet: 0,
+        minRaise: 2,
+        smallBlind: 1,
+        bigBlind: 2,
+        blindLevel: 1,
+        dealerSeat: 4,
+        activeSeat: 0,
+        communityCards: [],
+        burnCardsCount: 1,
+        winners: [],
+        handCount: 4,
+        stagedBet: 0,
+        isAllInRunout: false,
+        tournamentWinnerId: undefined,
+      };
+
+      let nextPeeking = false;
+      let nextPeekLock = false;
+
+      switch (scenario) {
+        case 'preflop_deal': {
+          nextPlayers[0] = {
+            ...nextPlayers[0],
+            chips: 198,
+            currentBet: 2,
+            totalHandBet: 2,
+            isTurn: true,
+            cards: [makeCard('A', 'spades'), makeCard('K', 'spades')],
+            lastAction: 'Post BB $2',
+          };
+          nextPlayers[1] = {
+            ...nextPlayers[1],
+            chips: 196,
+            currentBet: 4,
+            totalHandBet: 4,
+            cards: [makeCard('Q', 'clubs'), makeCard('J', 'clubs')],
+            lastAction: 'Raise to $4',
+            activeTell: 'watch_glance_strong',
+          };
+          nextPlayers[2] = {
+            ...nextPlayers[2],
+            chips: 196,
+            currentBet: 4,
+            totalHandBet: 4,
+            cards: [makeCard('10', 'diamonds'), makeCard('10', 'spades')],
+            lastAction: 'Call $4',
+            activeTell: 'posture_tight',
+          };
+          nextPlayers[3] = {
+            ...nextPlayers[3],
+            chips: 200,
+            currentBet: 0,
+            totalHandBet: 0,
+            cards: [makeCard('7', 'hearts'), makeCard('2', 'clubs')],
+            isWatchingPhone: true,
+            lastAction: 'Scrolling...',
+          };
+          nextPlayers[4] = {
+            ...nextPlayers[4],
+            chips: 199,
+            currentBet: 1,
+            totalHandBet: 1,
+            cards: [makeCard('A', 'diamonds'), makeCard('Q', 'diamonds')],
+            lastAction: 'Post SB $1',
+          };
+          nextTable = {
+            ...nextTable,
+            phase: 'preflop',
+            pot: 11,
+            currentHighBet: 4,
+            minRaise: 2,
+            dealerSeat: 3,
+            activeSeat: 0,
+            communityCards: [],
+            burnCardsCount: 0,
+          };
+          sceneRef.current?.triggerDealerAction('pitch_cards');
+          break;
+        }
+
+        case 'card_peel': {
+          nextPeeking = true;
+          nextPlayers[0] = {
+            ...nextPlayers[0],
+            chips: 185,
+            currentBet: 0,
+            totalHandBet: 15,
+            isTurn: true,
+            cards: [makeCard('A', 'spades', true), makeCard('J', 'spades', true)],
+            lastAction: 'Your Turn',
+          };
+          nextPlayers[1] = {
+            ...nextPlayers[1],
+            chips: 175,
+            currentBet: 10,
+            totalHandBet: 25,
+            cards: [makeCard('K', 'hearts'), makeCard('Q', 'hearts')],
+            lastAction: 'Bet $10',
+            activeTell: 'watch_glance_strong',
+          };
+          nextPlayers[2] = {
+            ...nextPlayers[2],
+            chips: 185,
+            currentBet: 0,
+            totalHandBet: 15,
+            folded: true,
+            cards: [makeCard('6', 'clubs'), makeCard('5', 'clubs')],
+            lastAction: 'Fold',
+          };
+          nextPlayers[3] = {
+            ...nextPlayers[3],
+            chips: 185,
+            currentBet: 0,
+            totalHandBet: 15,
+            cards: [makeCard('9', 'diamonds'), makeCard('4', 'spades')],
+            isWatchingPhone: true,
+          };
+          nextPlayers[4] = {
+            ...nextPlayers[4],
+            chips: 175,
+            currentBet: 10,
+            totalHandBet: 25,
+            cards: [makeCard('Q', 'spades'), makeCard('10', 'hearts')],
+            lastAction: 'Call $10',
+          };
+          nextTable = {
+            ...nextTable,
+            phase: 'flop',
+            pot: 95,
+            currentHighBet: 10,
+            minRaise: 10,
+            activeSeat: 0,
+            communityCards: [
+              makeCard('K', 'spades', true),
+              makeCard('Q', 'diamonds', true),
+              makeCard('10', 'clubs', true),
+            ],
+            burnCardsCount: 1,
+          };
+          break;
+        }
+
+        case 'chip_drag_stage': {
+          nextPlayers[0] = {
+            ...nextPlayers[0],
+            chips: 190,
+            currentBet: 0,
+            totalHandBet: 10,
+            isTurn: true,
+            cards: [makeCard('9', 'hearts', true), makeCard('9', 'clubs', true)],
+            lastAction: 'Staging $35...',
+          };
+          nextPlayers[1] = {
+            ...nextPlayers[1],
+            chips: 178,
+            currentBet: 12,
+            totalHandBet: 22,
+            cards: [makeCard('A', 'spades'), makeCard('8', 'spades')],
+            lastAction: 'Bet $12',
+          };
+          nextPlayers[2] = {
+            ...nextPlayers[2],
+            chips: 178,
+            currentBet: 12,
+            totalHandBet: 22,
+            cards: [makeCard('J', 'spades'), makeCard('10', 'spades')],
+            lastAction: 'Call $12',
+          };
+          nextPlayers[3] = {
+            ...nextPlayers[3],
+            chips: 190,
+            currentBet: 0,
+            totalHandBet: 10,
+            folded: true,
+            cards: [makeCard('4', 'hearts'), makeCard('2', 'diamonds')],
+            lastAction: 'Fold',
+          };
+          nextPlayers[4] = {
+            ...nextPlayers[4],
+            chips: 190,
+            currentBet: 0,
+            totalHandBet: 10,
+            cards: [makeCard('7', 'spades'), makeCard('6', 'spades')],
+            activeTell: 'chip_fidget_bluff',
+          };
+          nextTable = {
+            ...nextTable,
+            phase: 'flop',
+            pot: 74,
+            currentHighBet: 12,
+            minRaise: 12,
+            activeSeat: 0,
+            stagedBet: 35,
+            communityCards: [
+              makeCard('9', 'spades', true),
+              makeCard('8', 'diamonds', true),
+              makeCard('2', 'clubs', true),
+            ],
+            burnCardsCount: 1,
+          };
+          sceneRef.current?.triggerActionRipple(CasinoScene.BETTING_RING_CENTER, 0xfacc15);
+          break;
+        }
+
+        case 'bao_phone_scroll': {
+          nextPlayers[0] = {
+            ...nextPlayers[0],
+            chips: 192,
+            currentBet: 8,
+            totalHandBet: 8,
+            cards: [makeCard('A', 'hearts'), makeCard('K', 'clubs')],
+            lastAction: 'Bet $8',
+          };
+          nextPlayers[1] = {
+            ...nextPlayers[1],
+            chips: 192,
+            currentBet: 8,
+            totalHandBet: 8,
+            cards: [makeCard('J', 'hearts'), makeCard('J', 'diamonds')],
+            lastAction: 'Call $8',
+          };
+          nextPlayers[2] = {
+            ...nextPlayers[2],
+            chips: 192,
+            currentBet: 8,
+            totalHandBet: 8,
+            cards: [makeCard('Q', 'clubs'), makeCard('10', 'clubs')],
+            lastAction: 'Call $8',
+          };
+          nextPlayers[3] = {
+            ...nextPlayers[3],
+            chips: 196,
+            currentBet: 0,
+            totalHandBet: 4,
+            isTurn: true,
+            isWatchingPhone: true,
+            activeTell: 'none',
+            cards: [makeCard('8', 'clubs'), makeCard('3', 'diamonds')],
+            lastAction: 'Scrolling Reels...',
+            activeChatBubble: 'Hold on, watching this reel 😂📱',
+            activeChatTimestamp: now,
+          };
+          nextPlayers[4] = {
+            ...nextPlayers[4],
+            chips: 196,
+            currentBet: 0,
+            totalHandBet: 4,
+            folded: true,
+            cards: [makeCard('5', 'hearts'), makeCard('2', 'spades')],
+            lastAction: 'Fold',
+          };
+          nextTable = {
+            ...nextTable,
+            phase: 'flop',
+            pot: 32,
+            currentHighBet: 8,
+            minRaise: 8,
+            activeSeat: 3,
+            communityCards: [
+              makeCard('K', 'diamonds', true),
+              makeCard('7', 'clubs', true),
+              makeCard('3', 'spades', true),
+            ],
+            burnCardsCount: 1,
+          };
+          break;
+        }
+
+        case 'bao_phone_down_monster': {
+          nextPlayers[0] = {
+            ...nextPlayers[0],
+            chips: 170,
+            currentBet: 15,
+            totalHandBet: 30,
+            isTurn: true,
+            cards: [makeCard('A', 'clubs', true), makeCard('Q', 'spades', true)],
+            lastAction: 'Bet $15',
+          };
+          nextPlayers[1] = {
+            ...nextPlayers[1],
+            chips: 170,
+            currentBet: 15,
+            totalHandBet: 30,
+            cards: [makeCard('K', 'hearts'), makeCard('J', 'hearts')],
+            lastAction: 'Call $15',
+          };
+          nextPlayers[2] = {
+            ...nextPlayers[2],
+            chips: 185,
+            currentBet: 0,
+            totalHandBet: 15,
+            folded: true,
+            cards: [makeCard('9', 'clubs'), makeCard('8', 'clubs')],
+            lastAction: 'Fold',
+          };
+          nextPlayers[3] = {
+            ...nextPlayers[3],
+            chips: 140,
+            currentBet: 45,
+            totalHandBet: 60,
+            isWatchingPhone: false,
+            activeTell: 'phone_down_monster',
+            cards: [makeCard('A', 'hearts'), makeCard('A', 'diamonds')],
+            lastAction: 'Raise to $45',
+            activeChatBubble: '📱➡️🃏 All focus now. Raise to $45.',
+            activeChatTimestamp: now,
+          };
+          nextPlayers[4] = {
+            ...nextPlayers[4],
+            chips: 185,
+            currentBet: 0,
+            totalHandBet: 15,
+            folded: true,
+            cards: [makeCard('6', 'diamonds'), makeCard('4', 'diamonds')],
+            lastAction: 'Fold',
+          };
+          nextTable = {
+            ...nextTable,
+            phase: 'turn',
+            pot: 150,
+            currentHighBet: 45,
+            minRaise: 30,
+            activeSeat: 0,
+            communityCards: [
+              makeCard('A', 'spades', true),
+              makeCard('K', 'diamonds', true),
+              makeCard('K', 'clubs', true),
+              makeCard('7', 'spades', true),
+            ],
+            burnCardsCount: 2,
+          };
+          break;
+        }
+
+        case 'all_in_runout': {
+          nextPeekLock = true;
+          nextPlayers[0] = {
+            ...nextPlayers[0],
+            chips: 0,
+            currentBet: 200,
+            totalHandBet: 200,
+            allIn: true,
+            cards: [makeCard('A', 'diamonds', true), makeCard('K', 'diamonds', true)],
+            lastAction: 'All-In ($200)',
+          };
+          nextPlayers[1] = {
+            ...nextPlayers[1],
+            chips: 0,
+            currentBet: 200,
+            totalHandBet: 200,
+            allIn: true,
+            cards: [makeCard('Q', 'spades', true), makeCard('Q', 'diamonds', true)],
+            lastAction: 'All-In ($200)',
+          };
+          nextPlayers[2] = {
+            ...nextPlayers[2],
+            chips: 190,
+            currentBet: 0,
+            totalHandBet: 10,
+            folded: true,
+            cards: [makeCard('8', 'hearts'), makeCard('7', 'hearts')],
+            lastAction: 'Fold',
+          };
+          nextPlayers[3] = {
+            ...nextPlayers[3],
+            chips: 0,
+            currentBet: 80,
+            totalHandBet: 80,
+            allIn: true,
+            isWatchingPhone: false,
+            activeTell: 'phone_down_monster',
+            cards: [makeCard('J', 'spades', true), makeCard('10', 'spades', true)],
+            lastAction: 'All-In ($80)',
+          };
+          nextPlayers[4] = {
+            ...nextPlayers[4],
+            chips: 190,
+            currentBet: 0,
+            totalHandBet: 10,
+            folded: true,
+            cards: [makeCard('5', 'clubs'), makeCard('4', 'clubs')],
+            lastAction: 'Fold',
+          };
+          nextTable = {
+            ...nextTable,
+            phase: 'turn',
+            pot: 500,
+            sidePots: [
+              {
+                amount: 260,
+                eligiblePlayerIds: ['human', 'ai_1', 'ai_3'],
+                label: 'Main Pot',
+              },
+              {
+                amount: 240,
+                eligiblePlayerIds: ['human', 'ai_1'],
+                label: 'Side Pot 1',
+              },
+            ],
+            currentHighBet: 200,
+            minRaise: 200,
+            activeSeat: 0,
+            isAllInRunout: true,
+            communityCards: [
+              makeCard('A', 'spades', true),
+              makeCard('K', 'spades', true),
+              makeCard('Q', 'clubs', true),
+              makeCard('2', 'diamonds', true),
+            ],
+            burnCardsCount: 2,
+          };
+          break;
+        }
+
+        case 'showdown_multiway': {
+          nextPeekLock = true;
+          const comm = [
+            makeCard('A', 'spades', true),
+            makeCard('K', 'spades', true),
+            makeCard('Q', 'spades', true),
+            makeCard('J', 'spades', true),
+            makeCard('2', 'clubs', true),
+          ];
+          const humanCards = [makeCard('10', 'spades', true), makeCard('9', 'spades', true)];
+          nextPlayers[0] = {
+            ...nextPlayers[0],
+            chips: 420,
+            currentBet: 0,
+            totalHandBet: 140,
+            cards: humanCards,
+            lastAction: 'Royal Flush!',
+          };
+          nextPlayers[1] = {
+            ...nextPlayers[1],
+            chips: 60,
+            currentBet: 0,
+            totalHandBet: 140,
+            cards: [makeCard('A', 'clubs', true), makeCard('A', 'diamonds', true)],
+            lastAction: 'Three Aces',
+          };
+          nextPlayers[2] = {
+            ...nextPlayers[2],
+            chips: 190,
+            currentBet: 0,
+            totalHandBet: 10,
+            folded: true,
+            cards: [makeCard('7', 'diamonds'), makeCard('6', 'diamonds')],
+            lastAction: 'Fold',
+          };
+          nextPlayers[3] = {
+            ...nextPlayers[3],
+            chips: 120,
+            currentBet: 0,
+            totalHandBet: 130,
+            isWatchingPhone: false,
+            cards: [makeCard('K', 'clubs', true), makeCard('Q', 'clubs', true)],
+            lastAction: 'Two Pair',
+          };
+          nextPlayers[4] = {
+            ...nextPlayers[4],
+            chips: 210,
+            currentBet: 0,
+            totalHandBet: 0,
+            folded: true,
+            cards: [makeCard('4', 'spades'), makeCard('3', 'spades')],
+            lastAction: 'Fold',
+          };
+          nextTable = {
+            ...nextTable,
+            phase: 'showdown',
+            pot: 0,
+            currentHighBet: 0,
+            minRaise: 2,
+            activeSeat: 0,
+            isAllInRunout: false,
+            communityCards: comm,
+            burnCardsCount: 3,
+            winners: [
+              {
+                playerId: 'human',
+                playerName: 'You',
+                amount: 420,
+                handName: 'Royal Flush',
+                bestCards: [comm[0], comm[1], comm[2], comm[3], humanCards[0]],
+                potLabel: 'Main Pot',
+              },
+            ],
+          };
+          break;
+        }
+      }
+
+      setIsPeeking(nextPeeking);
+      isPeekingRef.current = nextPeeking;
+      setIsPeekLocked(nextPeekLock);
+      isPeekLockedRef.current = nextPeekLock;
+
+      setPlayers(nextPlayers);
+      playersRef.current = nextPlayers;
+      setTable(nextTable);
+      tableRef.current = nextTable;
+
+      syncSceneAll(nextTable, nextPlayers, nextPeeking || nextPeekLock);
+    },
+    [syncSceneAll]
+  );
+
   // Initialize Three.js Scene and WebXR
   useEffect(() => {
     if (!canvasContainerRef.current) return;
@@ -1202,7 +1818,7 @@ export const App: React.FC = () => {
     const casinoScene = new CasinoScene(canvasContainerRef.current);
     sceneRef.current = casinoScene;
 
-    const xrManager = new WebXRManager(casinoScene.renderer, casinoScene.scene);
+    const xrManager = new WebXRManager(casinoScene.renderer, casinoScene.scene, casinoScene.cameraRig);
     xrManagerRef.current = xrManager;
 
     xrManager.checkSupport().then((supported) => {
@@ -1219,8 +1835,9 @@ export const App: React.FC = () => {
     xrManager.onRayUp = (ray) => {
       casinoScene.handleRayUp(ray);
     };
-    xrManager.onSessionStateChange = (presenting) => {
+    xrManager.onSessionStateChange = (presenting, isFloorSpace = true) => {
       setIsInXR(presenting);
+      casinoScene.setXRPresenting(presenting, isFloorSpace);
       if (presenting) {
         setIsTitleMode(false);
         isTitleModeRef.current = false;
@@ -1234,11 +1851,26 @@ export const App: React.FC = () => {
       xrManager.updateFrame(frame);
     };
 
-    // Keyboard shortcut for peeking cards (Hold Spacebar)
+    // Keyboard shortcut for peeking cards (Hold Spacebar) & XR View Offset nudges
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' && !e.repeat) {
         e.preventDefault();
         handlePeek(true);
+      } else if (xrManagerRef.current?.isPresenting) {
+        // XR Viewpoint fine-tuning keys:
+        // ArrowDown / S: move further away from dealer (+Z)
+        // ArrowUp / W: move closer to table (-Z)
+        // PageUp / E: elevate viewpoint (+Y)
+        // PageDown / Q: lower viewpoint (-Y)
+        if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+          casinoScene.adjustXROffset(0, 0, 0.05);
+        } else if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+          casinoScene.adjustXROffset(0, 0, -0.05);
+        } else if (e.code === 'PageUp' || e.code === 'KeyE') {
+          casinoScene.adjustXROffset(0, 0.04, 0);
+        } else if (e.code === 'PageDown' || e.code === 'KeyQ') {
+          casinoScene.adjustXROffset(0, -0.04, 0);
+        }
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -1298,11 +1930,8 @@ export const App: React.FC = () => {
   }, []);
 
   const resetCamera = useCallback(() => {
-    if (sceneRef.current) {
-      sceneRef.current.camera.position.set(0, 1.42, 1.32);
-      sceneRef.current.controls.target.set(0, 0.76, -0.04);
-      sceneRef.current.controls.update();
-    }
+    setCameraPreset('seat0_pov');
+    sceneRef.current?.setCameraPreset('seat0_pov');
   }, []);
 
   const toggleVR = async () => {
@@ -1332,6 +1961,97 @@ export const App: React.FC = () => {
   // Real-time GTO & Node-Locked Exploitative Analysis
   const gtoAnalysis = useMemo(() => computeGTOAnalysis(table, players), [table, players]);
 
+  // Seat #0 Auto-Pilot Bot Loop (uses GTO Solver recommendation + auto-advances Showdown)
+  useEffect(() => {
+    if (!isAutoPilot || isTitleMode) {
+      if (autoPilotTimeoutRef.current !== null) {
+        window.clearTimeout(autoPilotTimeoutRef.current);
+        autoPilotTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    if (table.phase === 'showdown') {
+      const delay = Math.max(180, Math.round(1100 / speedMultiplier));
+      autoPilotTimeoutRef.current = window.setTimeout(() => {
+        if (tableRef.current.tournamentWinnerId || playersRef.current[0]?.eliminated) {
+          startNewTournament();
+        } else {
+          startNewHand();
+        }
+      }, delay);
+      return;
+    }
+
+    if (human && human.isTurn && !human.folded && !human.allIn && !table.isAllInRunout) {
+      const delay = Math.max(140, Math.round(620 / speedMultiplier));
+      autoPilotTimeoutRef.current = window.setTimeout(() => {
+        const activeRec = solverMode === 'exploit' ? gtoAnalysis.exploit : gtoAnalysis.pureGto;
+        handleAction(activeRec.bestAction);
+      }, delay);
+    }
+  }, [
+    isAutoPilot,
+    isTitleMode,
+    table,
+    human,
+    gtoAnalysis,
+    solverMode,
+    speedMultiplier,
+    handleAction,
+    startNewHand,
+    startNewTournament,
+  ]);
+
+  // Expose window.__POKER_DOGFOOD__ for Automated Playwright & Console Visual Verification
+  useEffect(() => {
+    const dogfoodApi = {
+      loadScenario: (id: DogfoodScenarioId) => handleLoadScenario(id),
+      setCameraPreset: (preset: CameraPresetId) => handleChangeCameraPreset(preset),
+      setShow2DHUD: (show: boolean) => setShow2DHUD(show),
+      setDebugOverlay: (enabled: boolean) => {
+        setDebugOverlayEnabled(enabled);
+        sceneRef.current?.setDebugOverlay(enabled);
+      },
+      setAutoPilot: (enabled: boolean, speed: 1 | 2 | 5 = 1) => {
+        if (enabled && isTitleModeRef.current) {
+          handleStartDesktopGame();
+        }
+        setSpeedMultiplier(speed);
+        speedMultiplierRef.current = speed;
+        setIsAutoPilot(enabled);
+        isAutoPilotRef.current = enabled;
+      },
+      runSpatialAudit: () => {
+        const report = sceneRef.current?.runSpatialAudit() || null;
+        setSpatialAudit(report);
+        return report;
+      },
+      getState: () => ({
+        isTitleMode: isTitleModeRef.current,
+        table: tableRef.current,
+        players: playersRef.current,
+        cameraPreset,
+        activeScenario,
+        isAutoPilot: isAutoPilotRef.current,
+        speedMultiplier: speedMultiplierRef.current,
+        show2DHUD,
+        debugOverlayEnabled,
+        drawCalls,
+      }),
+    };
+    (window as unknown as { __POKER_DOGFOOD__: typeof dogfoodApi }).__POKER_DOGFOOD__ = dogfoodApi;
+  }, [
+    handleLoadScenario,
+    handleChangeCameraPreset,
+    handleStartDesktopGame,
+    cameraPreset,
+    activeScenario,
+    show2DHUD,
+    debugOverlayEnabled,
+    drawCalls,
+  ]);
+
   return (
     <div className="relative w-screen h-screen bg-[#060911] select-none overflow-hidden">
       {/* 3D WebGL / WebXR Canvas Container */}
@@ -1353,6 +2073,7 @@ export const App: React.FC = () => {
         isXRSupported={isXRSupported}
         isInXR={isInXR}
         onEnterVR={toggleVR}
+        onAdjustXROffset={(dx, dy, dz) => sceneRef.current?.adjustXROffset(dx, dy, dz)}
         onAction={handleAction}
         onStageChip={handleStageChip}
         onClearStagedBet={handleClearStagedBet}
@@ -1368,6 +2089,25 @@ export const App: React.FC = () => {
         onChangeSolverMode={setSolverMode}
         decisionHistory={decisionHistory}
         lastDecisionRecord={lastDecisionRecord}
+        cameraPreset={cameraPreset}
+        onSelectCameraPreset={handleChangeCameraPreset}
+        activeScenario={activeScenario}
+        onLoadScenario={handleLoadScenario}
+        isAutoPilot={isAutoPilot}
+        onToggleAutoPilot={() => {
+          if (!isAutoPilot && isTitleMode) {
+            handleStartDesktopGame();
+          }
+          setIsAutoPilot((prev) => !prev);
+        }}
+        speedMultiplier={speedMultiplier}
+        onChangeSpeedMultiplier={setSpeedMultiplier}
+        show2DHUD={show2DHUD}
+        onToggle2DHUD={() => setShow2DHUD((prev) => !prev)}
+        debugOverlayEnabled={debugOverlayEnabled}
+        onToggleDebugOverlay={handleToggleDebugOverlay}
+        spatialAudit={spatialAudit}
+        onRunSpatialAudit={handleRefreshSpatialAudit}
       />
     </div>
   );

@@ -24,3 +24,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+public/runtime-config.js
+dogfood-captures/

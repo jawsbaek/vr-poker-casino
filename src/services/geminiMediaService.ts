@@ -15,9 +15,15 @@ class GeminiMediaService {
   private musicCache = new Map<MusicMood, string>(); // mood -> base64 MP3 audio
 
   constructor() {
+    const runtimeKey =
+      typeof window !== 'undefined'
+        ? (window as unknown as { __RUNTIME_CONFIG__?: { GEMINI_API_KEY?: string } })
+            .__RUNTIME_CONFIG__?.GEMINI_API_KEY
+        : '';
     const envKey =
       (typeof import.meta !== 'undefined' &&
         (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_GEMINI_API_KEY) ||
+      runtimeKey ||
       (typeof localStorage !== 'undefined' && localStorage.getItem('GEMINI_API_KEY')) ||
       '';
     if (envKey) {

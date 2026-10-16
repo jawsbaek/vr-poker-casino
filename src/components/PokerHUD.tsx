@@ -24,6 +24,9 @@ import {
   KeyRound,
   Box,
   Brain,
+  Camera,
+  Bot,
+  Layers,
 } from 'lucide-react';
 import {
   PlayerState,
@@ -38,6 +41,9 @@ import {
   GTOAnalysis,
   GTOSolverMode,
   HandDecisionRecord,
+  CameraPresetId,
+  DogfoodScenarioId,
+  SpatialAuditReport,
 } from '../types/poker';
 import {
   getRankLabel,
@@ -69,6 +75,7 @@ interface PokerHUDProps {
   isXRSupported: boolean;
   isInXR: boolean;
   onEnterVR: () => void;
+  onAdjustXROffset?: (dx: number, dy: number, dz: number) => void;
   onAction: (action: PlayerAction) => void;
   onStageChip: (denom: ChipDenomination) => void;
   onClearStagedBet: () => void;
@@ -84,7 +91,40 @@ interface PokerHUDProps {
   onChangeSolverMode: (mode: GTOSolverMode) => void;
   decisionHistory: HandDecisionRecord[];
   lastDecisionRecord: HandDecisionRecord | null;
+  cameraPreset: CameraPresetId;
+  onSelectCameraPreset: (preset: CameraPresetId) => void;
+  activeScenario: DogfoodScenarioId | null;
+  onLoadScenario: (scenario: DogfoodScenarioId) => void;
+  isAutoPilot: boolean;
+  onToggleAutoPilot: () => void;
+  speedMultiplier: 1 | 2 | 5;
+  onChangeSpeedMultiplier: (speed: 1 | 2 | 5) => void;
+  show2DHUD: boolean;
+  onToggle2DHUD: () => void;
+  debugOverlayEnabled: boolean;
+  onToggleDebugOverlay: () => void;
+  spatialAudit: SpatialAuditReport | null;
+  onRunSpatialAudit: () => void;
 }
+
+const CAMERA_PRESETS: { id: CameraPresetId; label: string; short: string }[] = [
+  { id: 'seat0_pov', label: 'Seat #0 POV', short: 'Seat #0' },
+  { id: 'top_down', label: 'Top-Down Felt', short: 'Top-Down' },
+  { id: 'macro_cards_chips', label: 'Macro Cards & Ring', short: 'Macro' },
+  { id: 'bao_tell_closeup', label: 'Bao Phone Tell', short: 'Bao Tell' },
+  { id: 'viktor_marcus_rim', label: 'Viktor & Marcus Rim', short: 'Rim Cast' },
+  { id: 'dealer_pov', label: 'Dealer Shoe POV', short: 'Dealer' },
+];
+
+const DOGFOOD_SCENARIOS: { id: DogfoodScenarioId; label: string; desc: string }[] = [
+  { id: 'preflop_deal', label: '1. Preflop Deal', desc: 'A♠K♠ dealt, blinds posted' },
+  { id: 'card_peel', label: '2. Hole Card Peel', desc: '3D corner peel + Flop board' },
+  { id: 'chip_drag_stage', label: '3. Staged Bet Ring', desc: '$175 staged inside gold ring' },
+  { id: 'bao_phone_scroll', label: '4. Bao Phone Scroll', desc: 'Dr. Bao scrolling video feed' },
+  { id: 'bao_phone_down_monster', label: '5. 🔥 Bao Phone Down', desc: 'Phone flat on rail + monster raise' },
+  { id: 'all_in_runout', label: '6. 🔥 All-In Spotlight', desc: 'Dimmed room + intense runout beam' },
+  { id: 'showdown_multiway', label: '7. 🏆 Showdown Sweep', desc: 'Levitating winning hand + pot sweep' },
+];
 
 export const PokerHUD: React.FC<PokerHUDProps> = ({
   isTitleMode,
@@ -101,6 +141,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
   isXRSupported,
   isInXR,
   onEnterVR,
+  onAdjustXROffset,
   onAction,
   onStageChip,
   onClearStagedBet,
@@ -116,6 +157,20 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
   onChangeSolverMode,
   decisionHistory,
   lastDecisionRecord,
+  cameraPreset,
+  onSelectCameraPreset,
+  activeScenario,
+  onLoadScenario,
+  isAutoPilot,
+  onToggleAutoPilot,
+  speedMultiplier,
+  onChangeSpeedMultiplier,
+  show2DHUD,
+  onToggle2DHUD,
+  debugOverlayEnabled,
+  onToggleDebugOverlay,
+  spatialAudit,
+  onRunSpatialAudit,
 }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [musicEnabled, setMusicEnabled] = useState(true);
@@ -123,13 +178,14 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
   const [volume, setVolume] = useState(0.65);
   const [showStatsDrawer, setShowStatsDrawer] = useState(false);
   const [showGTODrawer, setShowGTODrawer] = useState(false);
+  const [showDogfoodDrawer, setShowDogfoodDrawer] = useState(false);
   const [showBanterFeed, setShowBanterFeed] = useState(true);
   const [betAmount, setBetAmount] = useState<number>(table.bigBlind * 2);
   const [apiKeyInput, setApiKeyInput] = useState<string>(() => {
     try {
-      return localStorage.getItem('GEMINI_API_KEY') || '';
+      return localStorage.getItem('GEMINI_API_KEY') || geminiMedia.getApiKey() || '';
     } catch {
-      return '';
+      return geminiMedia.getApiKey() || '';
     }
   });
   const [hasGeminiKey, setHasGeminiKey] = useState<boolean>(() => geminiMedia.isConfigured());
@@ -527,6 +583,35 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
   // ==========================================================================
   const now = Date.now();
 
+  if (!show2DHUD) {
+    return (
+      <div className="absolute top-3 right-3 z-20 flex items-center gap-2 pointer-events-auto">
+        <div className="glass-panel px-2.5 py-1.5 rounded-xl border border-amber-400/50 flex items-center gap-1.5 shadow-xl">
+          <Camera className="w-3.5 h-3.5 text-amber-300" />
+          {CAMERA_PRESETS.map((cam) => (
+            <button
+              key={cam.id}
+              onClick={() => onSelectCameraPreset(cam.id)}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                cameraPreset === cam.id
+                  ? 'bg-amber-400 text-slate-950'
+                  : 'bg-slate-900/80 text-slate-300 hover:text-white'
+              }`}
+            >
+              {cam.short}
+            </button>
+          ))}
+          <button
+            onClick={onToggle2DHUD}
+            className="ml-1 px-2.5 py-1 rounded-lg bg-emerald-500/25 hover:bg-emerald-500/35 border border-emerald-400/50 text-emerald-300 text-[10px] font-black uppercase tracking-wider"
+          >
+            Show 2D HUD
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-3 sm:p-4 z-10 overflow-hidden">
       {/* 1. TOP BAR: Tournament Level, Pot + Side Pots, and Controls */}
@@ -581,6 +666,28 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
 
         {/* Right Quick Controls */}
         <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => {
+              const next = !showDogfoodDrawer;
+              setShowDogfoodDrawer(next);
+              if (next) onRunSpatialAudit();
+            }}
+            className={`glass-panel px-2.5 py-2 rounded-xl flex items-center gap-1.5 font-bold text-xs transition-all border ${
+              showDogfoodDrawer
+                ? 'border-amber-400 text-amber-200 bg-amber-500/25 shadow-lg'
+                : 'border-amber-400/40 text-amber-300 hover:bg-amber-500/15'
+            }`}
+            title="Open 3D Visual & Dogfood Inspector (Cameras, Scenarios, Auto-Pilot Bot, Spatial Audit)"
+          >
+            <Camera className="w-4 h-4 text-amber-300" />
+            <span>3D Inspector</span>
+            {isAutoPilot && (
+              <span className="px-1.5 py-0.2 rounded bg-emerald-500 text-slate-950 text-[9px] font-black">
+                BOT {speedMultiplier}x
+              </span>
+            )}
+          </button>
+
           <button
             onClick={() => setShowBanterFeed((prev) => !prev)}
             className={`glass-panel p-2.5 rounded-xl transition-colors ${
@@ -684,6 +791,40 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
               {isInXR ? 'Exit XR' : isXRSupported ? 'Enter WebXR' : 'WebXR'}
             </span>
           </button>
+
+          {isInXR && onAdjustXROffset && (
+            <div className="flex items-center gap-1 glass-panel px-2 py-1 rounded-xl border border-amber-500/40 bg-amber-950/40 text-xs">
+              <span className="text-amber-300 font-bold hidden sm:inline mr-1">시점 위치:</span>
+              <button
+                onClick={() => onAdjustXROffset(0, 0, 0.08)}
+                className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-amber-200 rounded font-bold transition-all text-xs border border-amber-400/30"
+                title="딜러로부터 더 멀어지기 (+Z)"
+              >
+                멀리 (뒤로)
+              </button>
+              <button
+                onClick={() => onAdjustXROffset(0, 0, -0.08)}
+                className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded font-bold transition-all text-xs border border-slate-600"
+                title="테이블 쪽으로 가까워지기 (-Z)"
+              >
+                가까이
+              </button>
+              <button
+                onClick={() => onAdjustXROffset(0, 0.05, 0)}
+                className="px-1.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 rounded font-bold transition-all text-xs border border-emerald-400/30"
+                title="시점 높이기 (+Y)"
+              >
+                ▲
+              </button>
+              <button
+                onClick={() => onAdjustXROffset(0, -0.05, 0)}
+                className="px-1.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 rounded font-bold transition-all text-xs border border-emerald-400/30"
+                title="시점 낮추기 (-Y)"
+              >
+                ▼
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -808,6 +949,167 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
             );
           })}
       </div>
+
+      {/* 2B. 3D VISUAL & DOGFOOD INSPECTOR DRAWER */}
+      {showDogfoodDrawer && (
+        <div className="self-end glass-panel p-4 rounded-2xl w-96 max-h-[76vh] overflow-y-auto pointer-events-auto border-amber-400/50 shadow-2xl space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+            <div className="flex items-center gap-1.5">
+              <Camera className="w-4 h-4 text-amber-300" />
+              <span className="text-xs font-extrabold uppercase tracking-wider text-amber-300">
+                3D Visual & Dogfood Inspector
+              </span>
+            </div>
+            <button
+              onClick={() => setShowDogfoodDrawer(false)}
+              className="text-xs text-slate-400 hover:text-white font-bold"
+            >
+              Close
+            </button>
+          </div>
+
+          {/* Multi-Angle 3D Camera Presets */}
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+              Multi-Angle 3D Camera Presets
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {CAMERA_PRESETS.map((cam) => (
+                <button
+                  key={cam.id}
+                  onClick={() => onSelectCameraPreset(cam.id)}
+                  className={`px-2 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${
+                    cameraPreset === cam.id
+                      ? 'bg-amber-500/25 border-amber-400 text-amber-200'
+                      : 'bg-slate-900/80 border-slate-800 text-slate-300 hover:border-amber-400/40'
+                  }`}
+                >
+                  {cam.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Deterministic 3D Visual Scenarios */}
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+              Deterministic 3D Visual Scenarios
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {DOGFOOD_SCENARIOS.map((sc) => (
+                <button
+                  key={sc.id}
+                  onClick={() => onLoadScenario(sc.id)}
+                  className={`p-2 rounded-xl text-left border transition-all ${
+                    activeScenario === sc.id
+                      ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
+                      : 'bg-slate-900/80 border-slate-800 text-slate-200 hover:border-cyan-400/40'
+                  }`}
+                >
+                  <div className="text-[11px] font-bold truncate">{sc.label}</div>
+                  <div className="text-[9px] text-slate-400 truncate">{sc.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Auto-Pilot Bot & Speed Multiplier */}
+          <div className="bg-slate-900/85 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Bot className={`w-4 h-4 ${isAutoPilot ? 'text-emerald-400' : 'text-slate-400'}`} />
+              <div>
+                <div className="text-[11px] font-bold text-white">Seat #0 Auto-Pilot Bot</div>
+                <div className="text-[9px] text-slate-400">Continuous hands with GTO actions</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={onToggleAutoPilot}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border ${
+                  isAutoPilot
+                    ? 'bg-emerald-500 text-slate-950 border-emerald-300'
+                    : 'bg-slate-800 text-slate-300 border-slate-700'
+                }`}
+              >
+                {isAutoPilot ? 'ON' : 'OFF'}
+              </button>
+              {([1, 2, 5] as const).map((spd) => (
+                <button
+                  key={spd}
+                  onClick={() => onChangeSpeedMultiplier(spd)}
+                  className={`px-1.5 py-1 rounded-lg text-[10px] font-mono font-bold border ${
+                    speedMultiplier === spd
+                      ? 'bg-amber-500/25 border-amber-400 text-amber-300'
+                      : 'bg-slate-950 border-slate-800 text-slate-400'
+                  }`}
+                >
+                  {spd}x
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 3D Canvas Overlay & Wireframe Controls */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              onClick={onToggle2DHUD}
+              className="py-1.5 px-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[11px] font-bold text-slate-200 flex items-center justify-center gap-1.5"
+            >
+              <Eye className="w-3.5 h-3.5 text-amber-300" />
+              <span>Pure 3D Canvas</span>
+            </button>
+            <button
+              onClick={onToggleDebugOverlay}
+              className={`py-1.5 px-2.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 ${
+                debugOverlayEnabled
+                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                  : 'bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>{debugOverlayEnabled ? 'Colliders ON' : '3D Colliders'}</span>
+            </button>
+          </div>
+
+          {/* Programmatic 3D Spatial Audit Report */}
+          <div className="bg-slate-950/90 p-2.5 rounded-xl border border-slate-800 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                Programmatic 3D Spatial Audit
+              </span>
+              <button
+                onClick={onRunSpatialAudit}
+                className="text-[10px] font-bold text-cyan-300 hover:underline"
+              >
+                Re-Run Checks
+              </button>
+            </div>
+            {spatialAudit ? (
+              <div className="space-y-1">
+                {spatialAudit.checks.map((chk) => (
+                  <div
+                    key={chk.id}
+                    className="flex items-center justify-between text-[10px] bg-slate-900/90 px-2 py-1 rounded border border-slate-800/80"
+                  >
+                    <span className="text-slate-200 truncate pr-2" title={chk.metric}>
+                      {chk.passed ? '✓' : '✗'} {chk.label}
+                    </span>
+                    <span
+                      className={`font-mono font-bold shrink-0 ${
+                        chk.passed ? 'text-emerald-400' : 'text-rose-400'
+                      }`}
+                    >
+                      {chk.passed ? 'PASS' : 'FAIL'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[10px] text-slate-400">Click Re-Run Checks to inspect 3D bounds.</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 3. STATS, AUDIO & GEMINI API KEY DRAWER MODAL */}
       {showStatsDrawer && (

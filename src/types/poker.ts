@@ -359,12 +359,14 @@ export interface SpatialAuditCheck {
   id: string;
   label: string;
   passed: boolean;
-  details: string;
+  metric: string;
+  details?: string;
 }
 
 export interface SpatialAuditReport {
   timestamp: number;
   allPassed: boolean;
+  cameraPreset?: CameraPresetId;
   drawCalls: number;
   triangles: number;
   checks: SpatialAuditCheck[];
