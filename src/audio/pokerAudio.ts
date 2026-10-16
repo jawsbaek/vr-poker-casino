@@ -27,6 +27,28 @@ class SoundEngine {
   private stepCounter: number = 0;
   private activeLyriaAudio: HTMLAudioElement | null = null;
 
+  private voiceQueue: Array<{
+    text: string;
+    role: 'dealer' | 'player';
+    persona?: AIPersona;
+    voiceName?: string;
+    voiceStyle?: string;
+  }> = [];
+  private isVoicePlaying: boolean = false;
+  private activeVoiceAudio: HTMLAudioElement | null = null;
+  private voiceGenerationId: number = 0;
+  private voiceIdleResolvers: Array<() => void> = [];
+
+  private updateMusicDucking() {
+    const targetMusicGain = !this.isMusicEnabled || this.isMuted ? 0 : this.isVoicePlaying ? 0.11 : 0.24;
+    if (this.musicGain && this.ctx) {
+      this.musicGain.gain.setTargetAtTime(targetMusicGain, this.ctx.currentTime, 0.12);
+    }
+    if (this.activeLyriaAudio) {
+      this.activeLyriaAudio.volume = this.isVoicePlaying ? 0.13 : 0.28;
+    }
+  }
+
   private initContext() {
     if (!this.ctx) {
       const AudioContextClass =
@@ -59,16 +81,14 @@ class SoundEngine {
     if (this.activeLyriaAudio) {
       this.activeLyriaAudio.muted = muted || !this.isMusicEnabled;
     }
-    if (muted && typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+    if (muted) {
+      this.clearVoiceQueue(true);
     }
   }
 
   public setMusicEnabled(enabled: boolean) {
     this.isMusicEnabled = enabled;
-    if (this.musicGain && this.ctx) {
-      this.musicGain.gain.setTargetAtTime(enabled ? 0.24 : 0, this.ctx.currentTime, 0.15);
-    }
+    this.updateMusicDucking();
     if (this.activeLyriaAudio) {
       this.activeLyriaAudio.muted = !enabled || this.isMuted;
     }
@@ -76,8 +96,8 @@ class SoundEngine {
 
   public setVoiceEnabled(enabled: boolean) {
     this.isVoiceEnabled = enabled;
-    if (!enabled && typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+    if (!enabled) {
+      this.clearVoiceQueue(true);
     }
   }
 

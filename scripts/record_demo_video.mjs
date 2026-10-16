@@ -551,7 +551,11 @@ async function generateDemoVideo() {
       kr: '딜러: "몬테카를로 VIP 테이블에 오신 것을 환영합니다. 카드를 셔플하고 딜링합니다."',
       bottomPx: 118,
     });
-    const playBtn = page.locator('button:has-text("Play in 3D Desktop Mode")');
+    const playBtn = page
+      .locator(
+        '[data-testid="title-start-desktop"], button:has-text("Take Your Seat"), button:has-text("Play in 3D Desktop Mode")'
+      )
+      .first();
     if ((await playBtn.count()) > 0) {
       await playBtn.click();
     }

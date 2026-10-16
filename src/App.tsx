@@ -22,6 +22,7 @@ import {
   CameraPresetId,
   DogfoodScenarioId,
   SpatialAuditReport,
+  HudUiAuditReport,
 } from './types/poker';
 import {
   createDeck,
@@ -43,6 +44,7 @@ import {
   recordActionInHUDStats,
   createInitialHUDStats,
 } from './logic/gtoEngine';
+import { runHudUiAudit, HUD_UI_RULES } from './logic/hudUiRulesHarness';
 import { pokerAudio } from './audio/pokerAudio';
 
 const INITIAL_STATS: SessionStats = {
@@ -107,6 +109,7 @@ export const App: React.FC = () => {
   const [show2DHUD, setShow2DHUD] = useState<boolean>(true);
   const [debugOverlayEnabled, setDebugOverlayEnabled] = useState<boolean>(false);
   const [spatialAudit, setSpatialAudit] = useState<SpatialAuditReport | null>(null);
+  const [hudUiAudit, setHudUiAudit] = useState<HudUiAuditReport | null>(null);
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
@@ -139,6 +142,10 @@ export const App: React.FC = () => {
   isAutoPilotRef.current = isAutoPilot;
   const speedMultiplierRef = useRef(speedMultiplier);
   speedMultiplierRef.current = speedMultiplier;
+  const show2DHUDRef = useRef(show2DHUD);
+  show2DHUDRef.current = show2DHUD;
+  const isInXRRef = useRef(isInXR);
+  isInXRRef.current = isInXR;
 
   const appendChatMessage = useCallback(
     (
@@ -1242,6 +1249,21 @@ export const App: React.FC = () => {
     }
   }, []);
 
+  const handleRefreshHudUiAudit = useCallback(() => {
+    const p0 = playersRef.current[0];
+    const t = tableRef.current;
+    const isPlayerTurn =
+      t.activeSeat === 0 && !p0?.folded && !p0?.allIn && t.phase !== 'showdown' && t.phase !== 'waiting';
+    const report = runHudUiAudit(sceneRef.current, {
+      show2DHUD: show2DHUDRef.current,
+      isInXR: isInXRRef.current,
+      isPlayerTurn,
+      phase: t.phase,
+    });
+    setHudUiAudit(report);
+    return report;
+  }, []);
+
   /**
    * Deterministically loads any of the 7 key 3D visual scenarios for inspection & dogfooding
    */
@@ -2003,12 +2025,25 @@ export const App: React.FC = () => {
     startNewTournament,
   ]);
 
+  // Synchronize 2D vs. 3D Spatial HUD mutual exclusivity with CasinoScene
+  useEffect(() => {
+    sceneRef.current?.setShow2DHUD(show2DHUD && !isInXR);
+    const timer = window.setTimeout(() => {
+      handleRefreshHudUiAudit();
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [show2DHUD, isInXR, table.phase, table.activeSeat, cameraPreset, handleRefreshHudUiAudit]);
+
   // Expose window.__POKER_DOGFOOD__ for Automated Playwright & Console Visual Verification
   useEffect(() => {
     const dogfoodApi = {
       loadScenario: (id: DogfoodScenarioId) => handleLoadScenario(id),
       setCameraPreset: (preset: CameraPresetId) => handleChangeCameraPreset(preset),
-      setShow2DHUD: (show: boolean) => setShow2DHUD(show),
+      setShow2DHUD: (show: boolean) => {
+        show2DHUDRef.current = show;
+        setShow2DHUD(show);
+        sceneRef.current?.setShow2DHUD(show && !isInXRRef.current);
+      },
       setDebugOverlay: (enabled: boolean) => {
         setDebugOverlayEnabled(enabled);
         sceneRef.current?.setDebugOverlay(enabled);
@@ -2027,8 +2062,15 @@ export const App: React.FC = () => {
         setSpatialAudit(report);
         return report;
       },
+      runHudUiAudit: () => {
+        return handleRefreshHudUiAudit();
+      },
+      getHudUiRules: () => HUD_UI_RULES,
       getCharacterScreenBounds: () => {
         return sceneRef.current?.getCharacterScreenBounds() || [];
+      },
+      getTableSafeZoneScreenBounds: () => {
+        return sceneRef.current?.getTableSafeZoneScreenBounds() || null;
       },
       getState: () => ({
         isTitleMode: isTitleModeRef.current,
@@ -2039,6 +2081,7 @@ export const App: React.FC = () => {
         isAutoPilot: isAutoPilotRef.current,
         speedMultiplier: speedMultiplierRef.current,
         show2DHUD,
+        isInXR,
         debugOverlayEnabled,
         drawCalls,
       }),
@@ -2048,9 +2091,11 @@ export const App: React.FC = () => {
     handleLoadScenario,
     handleChangeCameraPreset,
     handleStartDesktopGame,
+    handleRefreshHudUiAudit,
     cameraPreset,
     activeScenario,
     show2DHUD,
+    isInXR,
     debugOverlayEnabled,
     drawCalls,
   ]);
@@ -2106,11 +2151,20 @@ export const App: React.FC = () => {
         speedMultiplier={speedMultiplier}
         onChangeSpeedMultiplier={setSpeedMultiplier}
         show2DHUD={show2DHUD}
-        onToggle2DHUD={() => setShow2DHUD((prev) => !prev)}
+        onToggle2DHUD={() =>
+          setShow2DHUD((prev) => {
+            const next = !prev;
+            show2DHUDRef.current = next;
+            sceneRef.current?.setShow2DHUD(next && !isInXR);
+            return next;
+          })
+        }
         debugOverlayEnabled={debugOverlayEnabled}
         onToggleDebugOverlay={handleToggleDebugOverlay}
         spatialAudit={spatialAudit}
         onRunSpatialAudit={handleRefreshSpatialAudit}
+        hudUiAudit={hudUiAudit}
+        onRunHudUiAudit={handleRefreshHudUiAudit}
       />
     </div>
   );

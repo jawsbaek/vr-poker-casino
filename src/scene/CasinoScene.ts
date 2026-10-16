@@ -294,6 +294,8 @@ export class CasinoScene {
         hdrPmrem.compileEquirectangularShader();
         const envMap = hdrPmrem.fromEquirectangular(hdrTexture).texture;
         this.scene.environment = envMap;
+        this.scene.environmentRotation = new THREE.Euler(0, Math.PI, 0);
+        this.scene.environmentIntensity = 0.65;
         hdrTexture.dispose();
         hdrPmrem.dispose();
       },
@@ -431,7 +433,7 @@ export class CasinoScene {
     this.scene.add(this.ambientLight);
 
     // Warm overhead pendant downlight
-    this.pendantLight = new THREE.SpotLight('#fff1d0', 6.0);
+    this.pendantLight = new THREE.SpotLight('#fff1d0', 3.5);
     this.pendantLight.position.set(0, 2.65, 0);
     this.pendantLight.angle = Math.PI / 2.9;
     this.pendantLight.penumbra = 0.85;
@@ -444,12 +446,12 @@ export class CasinoScene {
     this.scene.add(this.pendantLight);
 
     // Center board accent light (intensifies during All-In Runout & Showdown)
-    this.boardPointLight = new THREE.PointLight('#fde047', 0.4, 2.5);
+    this.boardPointLight = new THREE.PointLight('#fde047', 0.35, 2.5);
     this.boardPointLight.position.set(0, 1.35, -0.04);
     this.scene.add(this.boardPointLight);
 
     // Active Turn Spotlight
-    this.activeSpotlight = new THREE.SpotLight('#fde047', 3.2, 4.5, Math.PI / 6.5, 0.85, 1.2);
+    this.activeSpotlight = new THREE.SpotLight('#fde047', 1.65, 4.5, Math.PI / 6.5, 0.85, 1.2);
     this.activeSpotlight.position.set(0, 2.2, 0.68);
     this.activeSpotlight.target.position.set(0, 0.75, 0.68);
     this.scene.add(this.activeSpotlight);
@@ -663,11 +665,11 @@ export class CasinoScene {
       roughnessMap: woodRough,
       normalMap: woodNor,
       normalScale: new THREE.Vector2(0.16, 0.16),
-      roughness: 0.32,
-      metalness: 0.04,
-      clearcoat: 0.55,
-      clearcoatRoughness: 0.28,
-      envMapIntensity: 0.55,
+      roughness: 0.36,
+      metalness: 0.02,
+      clearcoat: 0.16,
+      clearcoatRoughness: 0.42,
+      envMapIntensity: 0.24,
     });
 
     const mahoganyMat = new THREE.MeshPhysicalMaterial({
@@ -676,11 +678,11 @@ export class CasinoScene {
       roughnessMap: woodRough,
       normalMap: woodNor,
       normalScale: new THREE.Vector2(0.20, 0.20),
-      roughness: 0.34,
-      metalness: 0.04,
-      clearcoat: 0.48,
-      clearcoatRoughness: 0.28,
-      envMapIntensity: 0.55,
+      roughness: 0.38,
+      metalness: 0.02,
+      clearcoat: 0.16,
+      clearcoatRoughness: 0.42,
+      envMapIntensity: 0.24,
     });
 
     const leatherMat = new THREE.MeshPhysicalMaterial({
@@ -688,12 +690,13 @@ export class CasinoScene {
       roughnessMap: leatherRough,
       normalMap: leatherNor,
       normalScale: new THREE.Vector2(0.65, 0.65),
-      roughness: 0.48,
-      metalness: 0.08,
-      clearcoat: 0.28,
-      clearcoatRoughness: 0.35,
+      roughness: 0.52,
+      metalness: 0.04,
+      clearcoat: 0.15,
+      clearcoatRoughness: 0.45,
       sheen: 0.35,
       sheenColor: new THREE.Color('#2d2633'),
+      envMapIntensity: 0.28,
     });
 
     const brassMat = new THREE.MeshStandardMaterial({
@@ -949,7 +952,7 @@ export class CasinoScene {
     const shoeMesh = new THREE.Mesh(shoeGeo, goldMat);
     shoeMesh.position.set(0.24, 0.06, 0.28);
     shoeMesh.rotation.y = -0.35;
-    dealerTorsoGroup.add(shoeMesh);
+    dealerGroup.add(shoeMesh);
 
     this.scene.add(dealerGroup);
 
@@ -959,8 +962,70 @@ export class CasinoScene {
     dealerStudioLight.castShadow = false;
     dealerGroup.add(dealerStudioLight);
 
-    // Keep the articulated 3D Dealer rig (subsurface PBR skin, cornea clearcoat eyes,
-    // eyelid blink + iris saccade rig, and 5-finger hands) active without overwriting with static GLB.
+    // Load realistic Blender 5.2 VIP Dealer GLB model (GEO-body_male_realistic + RPM tuxedo & hair)
+    this.gltfLoader.load(
+      '/models/vip_dealer.glb',
+      (gltf) => {
+        gltf.scene.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            const hasColorAttr = Boolean(child.geometry?.attributes?.color);
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            for (const m of mats) {
+              if (
+                m &&
+                (m instanceof THREE.MeshStandardMaterial ||
+                  m instanceof THREE.MeshPhysicalMaterial)
+              ) {
+                if (hasColorAttr) {
+                  m.vertexColors = true;
+                }
+                if (m.name.includes('Eye')) {
+                  m.roughness = 0.02;
+                  if (m instanceof THREE.MeshPhysicalMaterial) {
+                    m.clearcoat = 1.0;
+                    m.clearcoatRoughness = 0.02;
+                  }
+                }
+                m.needsUpdate = true;
+              }
+            }
+          }
+        });
+
+        const torsoNode = gltf.scene.getObjectByName('Dealer_Torso');
+        const headNode = gltf.scene.getObjectByName('Dealer_Head');
+        const leftArmNode = gltf.scene.getObjectByName('Dealer_LeftArm');
+        const rightArmNode = gltf.scene.getObjectByName('Dealer_RightArm');
+
+        if (torsoNode) {
+          dealerTorsoGroup.clear();
+          torsoNode.position.set(0, 0, 0);
+          dealerTorsoGroup.add(torsoNode);
+        }
+        if (headNode) {
+          headGroup.clear();
+          headNode.position.set(0, 0, 0);
+          headGroup.add(headNode);
+          headGroup.userData.hasRealisticFacialRig = true;
+        }
+        if (leftArmNode) {
+          leftArm.clear();
+          leftArmNode.position.set(0, 0, 0);
+          leftArm.add(leftArmNode);
+        }
+        if (rightArmNode) {
+          rightArm.clear();
+          rightArmNode.position.set(0, 0, 0);
+          rightArm.add(rightArmNode);
+        }
+      },
+      undefined,
+      (err) => {
+        console.warn('[CasinoScene] Failed to load /models/vip_dealer.glb, keeping fallback:', err);
+      }
+    );
 
     // Movable Ceramic Dealer Button on the Felt
     const btnGeo = new THREE.CylinderGeometry(0.032, 0.032, 0.008, 24);
@@ -1280,6 +1345,72 @@ export class CasinoScene {
       seatKeyLight.castShadow = false;
       plaqueRef.avatarGroup.add(seatKeyLight);
     });
+
+    // Load realistic Blender 5.2 AI Players GLB model (Viktor, Elena, Bao, Marcus)
+    this.gltfLoader.load(
+      '/models/vip_ai_players.glb',
+      (gltf) => {
+        gltf.scene.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            const hasColorAttr = Boolean(child.geometry?.attributes?.color);
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            for (const m of mats) {
+              if (
+                m &&
+                (m instanceof THREE.MeshStandardMaterial ||
+                  m instanceof THREE.MeshPhysicalMaterial)
+              ) {
+                if (hasColorAttr) {
+                  m.vertexColors = true;
+                }
+                if (m.name.includes('Eye')) {
+                  m.roughness = 0.02;
+                  if (m instanceof THREE.MeshPhysicalMaterial) {
+                    m.clearcoat = 1.0;
+                    m.clearcoatRoughness = 0.02;
+                  }
+                }
+                m.needsUpdate = true;
+              }
+            }
+          }
+        });
+
+        avatarMeshSlots.forEach((slots) => {
+          const torsoNode = gltf.scene.getObjectByName(`${slots.rolePrefix}_Torso`);
+          const headNode = gltf.scene.getObjectByName(`${slots.rolePrefix}_Head`);
+          const leftArmNode = gltf.scene.getObjectByName(`${slots.rolePrefix}_LeftArm`);
+          const rightArmNode = gltf.scene.getObjectByName(`${slots.rolePrefix}_RightArm`);
+
+          if (torsoNode) {
+            slots.torsoMeshSlot.clear();
+            torsoNode.position.set(0, 0, 0);
+            slots.torsoMeshSlot.add(torsoNode);
+          }
+          if (headNode) {
+            slots.headMeshSlot.clear();
+            headNode.position.set(0, 0, 0);
+            slots.headMeshSlot.add(headNode);
+          }
+          if (leftArmNode) {
+            slots.leftArmMeshSlot.clear();
+            leftArmNode.position.set(0, 0, 0);
+            slots.leftArmMeshSlot.add(leftArmNode);
+          }
+          if (rightArmNode) {
+            slots.rightArmMeshSlot.clear();
+            rightArmNode.position.set(0, 0, 0);
+            slots.rightArmMeshSlot.add(rightArmNode);
+          }
+        });
+      },
+      undefined,
+      (err) => {
+        console.warn('[CasinoScene] Failed to load /models/vip_ai_players.glb, keeping fallback:', err);
+      }
+    );
   }
 
   /**
@@ -1403,12 +1534,13 @@ export class CasinoScene {
       const faceMat = new THREE.MeshPhysicalMaterial({
         map: textures.face,
         normalMap: textures.normalMap,
-        normalScale: new THREE.Vector2(0.38, 0.38),
+        normalScale: new THREE.Vector2(0.42, 0.42),
         roughnessMap: textures.roughnessMap,
-        roughness: 0.72,
-        metalness: denom === 100 ? 0.22 : 0.1,
-        clearcoat: 0.85,
-        clearcoatRoughness: 0.16,
+        roughness: 0.68,
+        metalness: denom === 100 ? 0.18 : 0.06,
+        clearcoat: 0.22,
+        clearcoatRoughness: 0.48,
+        envMapIntensity: 0.55,
       });
 
       const instanced = new THREE.InstancedMesh(
@@ -1642,6 +1774,7 @@ export class CasinoScene {
   public updateSpatialHUD(table: TableState, human: PlayerState, isPeeking: boolean) {
     this.latestTable = table;
     this.latestIsPeeking = isPeeking;
+    this.syncSpatialButtonsVisibility();
     const callAmount = Math.max(0, table.currentHighBet - human.currentBet);
     const isFreeToCheck = callAmount === 0;
     const minRaiseTotal = Math.max(table.bigBlind, table.currentHighBet + table.minRaise);
@@ -1876,15 +2009,14 @@ export class CasinoScene {
       metalness: 0.02,
     });
     const topMaterial = new THREE.MeshPhysicalMaterial({
-      color: '#ebe6dc',
+      color: '#e5dfd3',
       map: frontTexture,
       normalMap: linenNormal,
-      normalScale: new THREE.Vector2(0.22, 0.22),
-      roughness: 0.72,
+      normalScale: new THREE.Vector2(0.08, 0.08),
+      roughness: 0.88,
       metalness: 0.0,
-      clearcoat: 0.14,
-      clearcoatRoughness: 0.58,
-      envMapIntensity: 0.22,
+      clearcoat: 0.0,
+      envMapIntensity: 0.08,
     });
     const bottomMaterial = new THREE.MeshPhysicalMaterial({
       map: backTexture,
@@ -1906,7 +2038,7 @@ export class CasinoScene {
     mesh.receiveShadow = true;
     cardGroup.add(mesh);
 
-    return { group: cardGroup, frontMat: topMaterial };
+    return { group: cardGroup, frontMat: edgeMaterial };
   }
 
   /**
@@ -1940,6 +2072,8 @@ export class CasinoScene {
 
       if (!this.cardMeshes.has(card.id)) {
         const { group, frontMat } = this.createCardMesh(card);
+        frontMat.emissive.setHex(isWinner ? 0xd4af37 : 0x000000);
+        frontMat.emissiveIntensity = isWinner ? 0.06 : 0;
         const startPos = new THREE.Vector3(0, 0.86, -0.58); // Dealer shoe pitch origin
         group.position.copy(startPos);
         group.rotation.set(0, 0, Math.PI);
@@ -1962,7 +2096,7 @@ export class CasinoScene {
         ref.isWinningCard = isWinner;
         ref.targetPosition.y = isWinner ? basePos.y + 0.028 : basePos.y;
         ref.frontMat.emissive.setHex(isWinner ? 0xd4af37 : 0x000000);
-        ref.frontMat.emissiveIntensity = isWinner ? 0.32 : 0;
+        ref.frontMat.emissiveIntensity = isWinner ? 0.06 : 0;
       }
     });
 
@@ -1996,6 +2130,8 @@ export class CasinoScene {
 
         if (!this.cardMeshes.has(card.id)) {
           const { group, frontMat } = this.createCardMesh(card);
+          frontMat.emissive.setHex(isWinner ? 0xd4af37 : 0x000000);
+          frontMat.emissiveIntensity = isWinner ? 0.06 : 0;
           const startPos = new THREE.Vector3(0, 0.86, -0.58);
           group.position.copy(startPos);
           group.rotation.set(0, 0, Math.PI);
@@ -2021,7 +2157,7 @@ export class CasinoScene {
           ref.targetRotation.y = cardYaw;
           ref.targetRotation.z = faceRoll;
           ref.frontMat.emissive.setHex(isWinner ? 0xd4af37 : 0x000000);
-          ref.frontMat.emissiveIntensity = isWinner ? 0.32 : 0;
+          ref.frontMat.emissiveIntensity = isWinner ? 0.06 : 0;
         }
       });
     });
@@ -2571,15 +2707,16 @@ export class CasinoScene {
       // 1. Update WebXR Hand Tracking & Controller Rays
       this.onXRFrameCallback?.(frame);
 
-      // 2. Smooth Title Mode Cinematic Camera Orbit
+      // 2. Smooth Title Mode Front-Arc Pendulum Drift (Always frames faces & felt from Seat #0 arc)
       if (this.isTitleMode && !this.renderer.xr.isPresenting) {
-        this.titleOrbitAngle += dt * 0.22;
+        this.titleOrbitAngle += dt * 0.32;
+        const swingAngle = Math.sin(this.titleOrbitAngle) * 0.42;
         this.camera.position.set(
-          Math.sin(this.titleOrbitAngle) * 1.85,
-          1.55 + Math.sin(elapsed * 0.5) * 0.06,
-          Math.cos(this.titleOrbitAngle) * 1.65
+          Math.sin(swingAngle) * 1.66,
+          1.50 + Math.sin(elapsed * 0.5) * 0.03,
+          Math.cos(swingAngle) * 1.62
         );
-        this.camera.lookAt(0, 0.78, -0.05);
+        this.camera.lookAt(Math.sin(swingAngle * 0.3) * 0.16, 0.82, -0.05);
       } else if (!this.renderer.xr.isPresenting) {
         this.controls.update();
       }
@@ -2588,8 +2725,8 @@ export class CasinoScene {
       if (this.ambientLight && this.pendantLight && this.boardPointLight && this.activeSpotlight) {
         const isAllIn = Boolean(this.latestTable?.isAllInRunout);
         const isShowdown = this.latestTable?.phase === 'showdown';
-        const targetAmbient = isAllIn ? 0.38 : isShowdown ? 0.52 : 0.75;
-        const targetBoard = isAllIn ? 2.8 : isShowdown ? 2.4 : 1.5;
+        const targetAmbient = isAllIn ? 0.30 : isShowdown ? 0.34 : 0.38;
+        const targetBoard = isAllIn ? 0.38 : isShowdown ? 0.32 : 0.22;
         this.ambientLight.intensity = THREE.MathUtils.lerp(this.ambientLight.intensity, targetAmbient, 0.08);
         this.boardPointLight.intensity = THREE.MathUtils.lerp(this.boardPointLight.intensity, targetBoard, 0.08);
 
@@ -2600,12 +2737,12 @@ export class CasinoScene {
           if (winSeat !== undefined && CasinoScene.SEAT_POSITIONS[winSeat]) {
             const wPos = CasinoScene.SEAT_POSITIONS[winSeat];
             this.activeSpotlight.target.position.lerp(new THREE.Vector3(wPos.x, 0.75, wPos.z), 0.12);
-            this.activeSpotlight.intensity = THREE.MathUtils.lerp(this.activeSpotlight.intensity, 4.8, 0.1);
+            this.activeSpotlight.intensity = THREE.MathUtils.lerp(this.activeSpotlight.intensity, 2.0, 0.1);
           }
         } else {
           this.activeSpotlight.intensity = THREE.MathUtils.lerp(
             this.activeSpotlight.intensity,
-            isAllIn ? 4.2 : 3.0,
+            isAllIn ? 1.85 : 1.45,
             0.08
           );
         }
@@ -2810,7 +2947,7 @@ export class CasinoScene {
           );
           plaqueRef.headGroup.rotation.x = THREE.MathUtils.lerp(
             plaqueRef.headGroup.rotation.x,
-            0.28,
+            0.06,
             0.1
           );
         } else {
@@ -3517,7 +3654,7 @@ export class CasinoScene {
       metric: `maxFeltNorm = ${maxChipFeltNorm.toFixed(3)} (<= 0.980), minChipY = ${minChipY.toFixed(3)}m`,
     });
 
-    // 5. Spatial Rim Buttons Above Leather Armrest (y >= 0.82m)
+    // 5. Spatial Rim Buttons Above Leather Armrest (y >= 0.82m) & 2D/3D HUD Mutual Exclusivity Branching
     const minBtnY = this.spatialButtons.reduce(
       (min, b) => Math.min(min, b.mesh.position.y),
       Infinity
@@ -3527,6 +3664,18 @@ export class CasinoScene {
       label: '3D Spatial Rim HUD Buttons Clear Leather Armrest (y >= 0.82m)',
       passed: minBtnY >= 0.82,
       metric: `minButtonY = ${minBtnY.toFixed(3)}m (armrest top = 0.800m)`,
+    });
+
+    const expectedSpatialVisible = !this.show2DHUD || this.isInXR;
+    const visibleSpatialCount = this.spatialButtons.filter((b) => b.mesh.visible).length;
+    const mutualExclusivityPassed = this.spatialButtons.every(
+      (b) => b.mesh.visible === expectedSpatialVisible
+    );
+    checks.push({
+      id: 'hud_2d_3d_mutual_exclusivity',
+      label: '2D HUD & 3D Spatial Rim HUD Mutual Exclusivity (Never Shown Simultaneously)',
+      passed: mutualExclusivityPassed,
+      metric: `show2DHUD=${this.show2DHUD}, isInXR=${this.isInXR}, visible3DSpatialButtons=${visibleSpatialCount}/4 (expected=${expectedSpatialVisible ? 4 : 0})`,
     });
 
     // 6. Ergonomic Seated Gaze Pitch (-6 deg to -28 deg from Seat #0 Eye Level 1.25m to Center Board 0.76m)

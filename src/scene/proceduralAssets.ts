@@ -245,11 +245,18 @@ function drawCasinoCardInterior(
   const cx = w / 2;
   const cy = h / 2;
 
-  // Inner hairline gold/slate frame separating corner indices from the central pip/court field
-  ctx.strokeStyle = isRed ? 'rgba(212, 175, 55, 0.42)' : 'rgba(148, 163, 184, 0.38)';
-  ctx.lineWidth = 3;
+  // Subtle inner frame line around the outer card border + interior pip/court frame
+  ctx.strokeStyle = 'rgba(15, 23, 42, 0.22)';
+  ctx.lineWidth = 3.5;
   ctx.beginPath();
-  ctx.roundRect(172, 156, w - 344, h - 312, 18);
+  ctx.roundRect(28, 28, w - 56, h - 56, 32);
+  ctx.stroke();
+
+  // Inner hairline gold/slate frame separating corner indices from the central pip/court field
+  ctx.strokeStyle = isRed ? 'rgba(153, 27, 27, 0.38)' : 'rgba(15, 23, 42, 0.28)';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.roundRect(184, 164, w - 368, h - 328, 18);
   ctx.stroke();
 
   const drawPip = (px: number, py: number, size: number, inverted: boolean = false) => {
@@ -257,7 +264,7 @@ function drawCasinoCardInterior(
     ctx.translate(px, py);
     if (inverted) ctx.rotate(Math.PI);
     ctx.fillStyle = color;
-    ctx.font = `${size}px Georgia, "Plus Jakarta Sans", serif`;
+    ctx.font = `bold ${size}px Georgia, "Plus Jakarta Sans", serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(suitStr, 0, 0);
@@ -267,23 +274,28 @@ function drawCasinoCardInterior(
   if (card.rank === 14) {
     // Ornate Monte-Carlo Ace Centerpiece
     ctx.save();
-    ctx.strokeStyle = 'rgba(212, 175, 55, 0.55)';
-    ctx.lineWidth = 5;
+    ctx.fillStyle = isRed ? 'rgba(153, 27, 27, 0.10)' : 'rgba(9, 13, 22, 0.08)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 210, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(161, 114, 23, 0.82)';
+    ctx.lineWidth = 7;
     ctx.beginPath();
     ctx.arc(cx, cy, 210, 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(212, 175, 55, 0.28)';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.38)';
+    ctx.lineWidth = 3.5;
     ctx.beginPath();
     ctx.arc(cx, cy, 192, 0, Math.PI * 2);
     ctx.stroke();
 
-    drawPip(cx, cy, 340, false);
+    drawPip(cx, cy, 365, false);
 
     // Subtle gold crown inside Ace pip
     ctx.fillStyle = '#d4af37';
-    ctx.font = 'bold 44px Georgia, serif';
+    ctx.font = 'bold 52px Georgia, serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('♛', cx, cy - 8);
@@ -292,29 +304,30 @@ function drawCasinoCardInterior(
   }
 
   if (card.rank >= 11 && card.rank <= 13) {
-    // Royal Court Card (J, Q, K) with Gold-Filigree Medallion & Double-Headed Royal Crest
+    // Royal Court Card (J, Q, K) with High-Contrast Medallion & Double-Headed Royal Crest
     ctx.save();
-    const boxX = 192;
-    const boxY = 176;
-    const boxW = w - 384;
-    const boxH = h - 352;
+    const boxX = 196;
+    const boxY = 180;
+    const boxW = w - 392;
+    const boxH = h - 360;
 
     const courtGrad = ctx.createLinearGradient(boxX, boxY, boxX + boxW, boxY + boxH);
-    courtGrad.addColorStop(0, isRed ? 'rgba(220, 38, 38, 0.06)' : 'rgba(15, 23, 42, 0.06)');
-    courtGrad.addColorStop(0.5, 'rgba(212, 175, 55, 0.14)');
-    courtGrad.addColorStop(1, isRed ? 'rgba(220, 38, 38, 0.06)' : 'rgba(15, 23, 42, 0.06)');
+    courtGrad.addColorStop(0, isRed ? 'rgba(153, 27, 27, 0.22)' : 'rgba(9, 13, 22, 0.20)');
+    courtGrad.addColorStop(0.5, 'rgba(180, 130, 31, 0.38)');
+    courtGrad.addColorStop(1, isRed ? 'rgba(153, 27, 27, 0.22)' : 'rgba(9, 13, 22, 0.20)');
     ctx.fillStyle = courtGrad;
     ctx.fillRect(boxX, boxY, boxW, boxH);
 
-    ctx.strokeStyle = '#d4af37';
-    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#855812';
+    ctx.lineWidth = 8;
     ctx.strokeRect(boxX, boxY, boxW, boxH);
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.38)';
+    ctx.lineWidth = 3.5;
     ctx.strokeRect(boxX + 12, boxY + 12, boxW - 24, boxH - 24);
 
     // Diagonal reflection divider line (traditional double-headed court split)
-    ctx.strokeStyle = 'rgba(212, 175, 55, 0.45)';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(133, 88, 18, 0.75)';
+    ctx.lineWidth = 4.5;
     ctx.beginPath();
     ctx.moveTo(boxX + 12, boxY + boxH * 0.58);
     ctx.lineTo(boxX + boxW - 12, boxY + boxH * 0.42);
@@ -329,42 +342,48 @@ function drawCasinoCardInterior(
       ctx.translate(cx, isBottom ? cy + 250 : cy - 250);
       if (isBottom) ctx.rotate(Math.PI);
 
-      // Gold halo disc behind crown
-      ctx.fillStyle = 'rgba(212, 175, 55, 0.18)';
+      // High-contrast court inner badge disc behind crown (globalAlpha >= 0.42)
+      ctx.save();
+      ctx.globalAlpha = 0.42;
+      ctx.fillStyle = isRed ? '#b4821f' : '#475569';
       ctx.beginPath();
-      ctx.arc(0, 0, 118, 0, Math.PI * 2);
+      ctx.arc(0, 0, 122, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#d4af37';
-      ctx.lineWidth = 3.5;
+      ctx.restore();
+
+      ctx.strokeStyle = '#855812';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(0, 0, 122, 0, Math.PI * 2);
       ctx.stroke();
 
       // Royal chess/crown figure
       ctx.fillStyle = color;
-      ctx.font = '148px Georgia, serif';
+      ctx.font = 'bold 162px Georgia, serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(courtSymbol, 0, -8);
 
       // Flanking large suit pips inside court frame
-      ctx.font = '88px Georgia, serif';
-      ctx.fillText(suitStr, -185, -95);
-      ctx.fillStyle = '#d4af37';
-      ctx.font = 'bold 28px "Cinzel", Georgia, serif';
-      ctx.fillText(courtTitle, 0, 88);
+      ctx.font = 'bold 102px Georgia, serif';
+      ctx.fillText(suitStr, -182, -95);
+      ctx.fillStyle = '#5c3d08';
+      ctx.font = 'bold 32px "Cinzel", Georgia, serif';
+      ctx.fillText(courtTitle, 0, 90);
       ctx.restore();
     }
 
     // Center gold-foil royal rank medallion
-    ctx.fillStyle = '#090c12';
+    ctx.fillStyle = '#090d16';
     ctx.beginPath();
-    ctx.arc(cx, cy, 86, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 92, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#d4af37';
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 6.5;
     ctx.stroke();
 
     ctx.fillStyle = '#f3e5ab';
-    ctx.font = 'bold 92px "Cinzel", Georgia, serif';
+    ctx.font = 'bold 98px "Cinzel", Georgia, serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(rankStr, cx, cy + 4);
@@ -373,8 +392,8 @@ function drawCasinoCardInterior(
   }
 
   // Authentic Casino Pip Grid Layouts for Ranks 2..10
-  const leftX = cx - 150;
-  const rightX = cx + 150;
+  const leftX = cx - 148;
+  const rightX = cx + 148;
   const topY = 295;
   const botY = h - 295;
   const midY = cy;
@@ -382,7 +401,7 @@ function drawCasinoCardInterior(
   const lowerMidY = (midY + botY) / 2;
   const thirdTopY = topY + (botY - topY) * 0.333;
   const thirdBotY = topY + (botY - topY) * 0.667;
-  const pipSize = card.rank >= 8 ? 148 : 164;
+  const pipSize = card.rank >= 8 ? 160 : 176;
 
   const pips: Array<[number, number, boolean]> = [];
   switch (card.rank) {
@@ -487,16 +506,22 @@ export function getCardFrontTexture(card: Card): THREE.CanvasTexture {
   const w = canvas.width;
   const h = canvas.height;
 
-  // Warm ivory cellulose-acetate casino card stock (toned to prevent overhead spotlight specular clipping)
-  const bgGrad = ctx.createRadialGradient(w / 2, h / 2, 100, w / 2, h / 2, 860);
-  bgGrad.addColorStop(0, '#f5f2eb');
-  bgGrad.addColorStop(0.75, '#ede8de');
-  bgGrad.addColorStop(1, '#e2dcd0');
-  ctx.fillStyle = bgGrad;
+  // Warm matte ivory/parchment outer border (#ddd6c7) + inner card stock (#e6e0d4)
+  // Prevents ACESFilmic tone mapping + directional overhead spotlights from clipping to pure white (255, 255, 255)
+  ctx.fillStyle = '#ddd6c7';
   ctx.fillRect(0, 0, w, h);
 
+  const bgGrad = ctx.createRadialGradient(w / 2, h / 2, 80, w / 2, h / 2, 840);
+  bgGrad.addColorStop(0, '#e6e0d4');
+  bgGrad.addColorStop(0.75, '#dfd8ca');
+  bgGrad.addColorStop(1, '#ddd6c7');
+  ctx.fillStyle = bgGrad;
+  ctx.beginPath();
+  ctx.roundRect(28, 28, w - 56, h - 56, 32);
+  ctx.fill();
+
   const isRed = card.suit === 'hearts' || card.suit === 'diamonds';
-  const color = isRed ? '#b91c1c' : '#090d16';
+  const color = isRed ? '#991b1b' : '#090d16';
   const rankStr = getRankLabel(card.rank);
   const suitStr = getSuitSymbol(card.suit);
 
@@ -504,22 +529,25 @@ export function getCardFrontTexture(card: Card): THREE.CanvasTexture {
   const drawJumboCorner = (isBottomRight: boolean) => {
     ctx.save();
     if (isBottomRight) {
-      ctx.translate(w - 92, h - 122);
+      ctx.translate(w - 106, h - 134);
       ctx.rotate(Math.PI);
     } else {
-      ctx.translate(92, 122);
+      ctx.translate(106, 134);
     }
     ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
     ctx.font =
       rankStr === '10'
-        ? 'bold 104px "Plus Jakarta Sans", Georgia, sans-serif'
-        : 'bold 118px "Plus Jakarta Sans", Georgia, sans-serif';
+        ? '900 124px "Plus Jakarta Sans", Georgia, sans-serif'
+        : '900 140px "Plus Jakarta Sans", Georgia, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    ctx.strokeText(rankStr, 0, 0);
     ctx.fillText(rankStr, 0, 0);
 
-    ctx.font = '102px Georgia, "Plus Jakarta Sans", serif';
-    ctx.fillText(suitStr, 0, 108);
+    ctx.font = 'bold 122px Georgia, "Plus Jakarta Sans", serif';
+    ctx.fillText(suitStr, 0, 120);
     ctx.restore();
   };
 
@@ -531,14 +559,14 @@ export function getCardFrontTexture(card: Card): THREE.CanvasTexture {
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 8;
+  texture.anisotropy = 16;
   cardTextureCache.set(cacheKey, texture);
   return texture;
 }
 
 /**
  * Generates shared procedural Normal Map (12-notch compression clay mold + recessed inlay step)
- * and Roughness Map (matte chalky clay outer ring vs glossy clearcoat center medallion) for 3D chips.
+ * and Roughness Map (matte chalky clay outer ring vs satin laminated center medallion) for 3D chips.
  */
 function getSharedChipPBRMaps(): { normalMap: THREE.CanvasTexture; roughnessMap: THREE.CanvasTexture } {
   if (chipNormalCache && chipRoughnessCache) {
@@ -573,21 +601,21 @@ function getSharedChipPBRMaps(): { normalMap: THREE.CanvasTexture; roughnessMap:
 
       let nx = 0;
       let ny = 0;
-      let roughVal = 175; // Default matte compression clay (~0.69 roughness)
+      let roughVal = 185; // Default matte compression clay (~0.72 roughness)
 
       if (r < 0.58) {
-        // Glossy laminated center inlay medallion
-        roughVal = 42; // ~0.16 roughness
-        // Subtle gold filigree ring at r ≈ 0.55..0.575
+        // Satin laminated center inlay medallion (anti-glare so overhead light doesn't wash out denomination)
+        roughVal = 118; // ~0.46 roughness
+        // Subtle gold filigree ring at r ≈ 0.545..0.578
         if (r > 0.545 && r < 0.578) {
-          roughVal = 28; // Metallic gold ring (~0.11 roughness)
+          roughVal = 52; // Metallic gold ring (~0.20 roughness)
           const ringSlope = Math.sin(((r - 0.545) / 0.033) * Math.PI * 2) * 28;
           nx += Math.cos(theta) * ringSlope;
           ny += Math.sin(theta) * ringSlope;
         }
       } else if (r >= 0.58 && r <= 0.63) {
         // Recessed inlay step bevel wall
-        roughVal = 110;
+        roughVal = 135;
         const stepSlope = 52;
         nx -= Math.cos(theta) * stepSlope;
         ny -= Math.sin(theta) * stepSlope;
@@ -598,12 +626,12 @@ function getSharedChipPBRMaps(): { normalMap: THREE.CanvasTexture; roughnessMap:
         const moldNotch = Math.sin(theta * 12) * 20;
         nx += -Math.sin(theta) * moldNotch + grain;
         ny += Math.cos(theta) * moldNotch + grain;
-        roughVal = 184; // Matte clay (~0.72 roughness)
+        roughVal = 196; // Matte clay (~0.77 roughness)
       } else if (r >= 0.96) {
         // Outer chamfered lip
         nx += Math.cos(theta) * 46;
         ny += Math.sin(theta) * 46;
-        roughVal = 150;
+        roughVal = 160;
       }
 
       nData[idx] = Math.max(0, Math.min(255, Math.round(128 + nx)));
@@ -646,37 +674,37 @@ export function getChipTextures(denom: ChipDenomination): {
   faceCanvas.height = 512;
   const fCtx = faceCanvas.getContext('2d')!;
 
-  let primaryColor = '#f1f5f9';
-  let stripeColor = '#2563eb';
-  let accentTrimColor = '#1e3a8a';
+  let primaryColor = '#cbd5e1';
+  let stripeColor = '#1d4ed8';
+  let accentTrimColor = '#60a5fa';
   let textColor = '#0f172a';
   let valueLabel = '$1';
 
   switch (denom) {
     case 1:
-      primaryColor = '#f1f5f9';
-      stripeColor = '#2563eb';
-      accentTrimColor = '#93c5fd';
+      primaryColor = '#cbd5e1';
+      stripeColor = '#1d4ed8';
+      accentTrimColor = '#60a5fa';
       textColor = '#0f172a';
       valueLabel = '$1';
       break;
     case 5:
-      primaryColor = '#b91c1c';
-      stripeColor = '#f8fafc';
-      accentTrimColor = '#fca5a5';
-      textColor = '#991b1b';
+      primaryColor = '#991b1b';
+      stripeColor = '#e2dcd0';
+      accentTrimColor = '#f87171';
+      textColor = '#7f1d1d';
       valueLabel = '$5';
       break;
     case 25:
-      primaryColor = '#15803d';
-      stripeColor = '#eab308';
-      accentTrimColor = '#fde047';
-      textColor = '#14532d';
+      primaryColor = '#14532d';
+      stripeColor = '#ca8a04';
+      accentTrimColor = '#facc15';
+      textColor = '#064e3b';
       valueLabel = '$25';
       break;
     case 100:
-      primaryColor = '#111827';
-      stripeColor = '#d4af37';
+      primaryColor = '#0f172a';
+      stripeColor = '#b4821f';
       accentTrimColor = '#f3e5ab';
       textColor = '#f3e5ab';
       valueLabel = '$100';
@@ -709,36 +737,36 @@ export function getChipTextures(denom: ChipDenomination): {
     fCtx.save();
     fCtx.translate(cx + Math.cos(midAngle) * 204, cy + Math.sin(midAngle) * 204);
     fCtx.rotate(midAngle + Math.PI / 4);
-    fCtx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
-    fCtx.lineWidth = 3;
+    fCtx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+    fCtx.lineWidth = 3.5;
     fCtx.strokeRect(-10, -10, 20, 20);
     fCtx.restore();
   }
 
   // 3. Outer chamfered bevel shadow ring
-  const outerBevelGrad = fCtx.createRadialGradient(cx, cy, 232, cx, cy, 254);
+  const outerBevelGrad = fCtx.createRadialGradient(cx, cy, 230, cx, cy, 254);
   outerBevelGrad.addColorStop(0, 'rgba(0,0,0,0)');
-  outerBevelGrad.addColorStop(1, 'rgba(0,0,0,0.42)');
+  outerBevelGrad.addColorStop(1, 'rgba(0,0,0,0.48)');
   fCtx.fillStyle = outerBevelGrad;
   fCtx.beginPath();
   fCtx.arc(cx, cy, 254, 0, Math.PI * 2);
   fCtx.fill();
 
   // 4. Recessed inner well step shadow ring (at r ≈ 156px)
-  fCtx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
-  fCtx.lineWidth = 8;
+  fCtx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+  fCtx.lineWidth = 9;
   fCtx.beginPath();
   fCtx.arc(cx, cy, 156, 0, Math.PI * 2);
   fCtx.stroke();
 
-  // 5. Center laminated inlay medallion disc
+  // 5. Center laminated inlay medallion disc (warm parchment stock so overhead light never blows out text)
   const inlayGrad = fCtx.createRadialGradient(cx - 24, cy - 24, 12, cx, cy, 152);
   if (denom === 100) {
     inlayGrad.addColorStop(0, '#1e293b');
     inlayGrad.addColorStop(1, '#090c12');
   } else {
-    inlayGrad.addColorStop(0, '#ffffff');
-    inlayGrad.addColorStop(1, '#f1f5f9');
+    inlayGrad.addColorStop(0, '#e5dec9');
+    inlayGrad.addColorStop(1, '#d3c8b0');
   }
   fCtx.fillStyle = inlayGrad;
   fCtx.beginPath();
@@ -746,31 +774,31 @@ export function getChipTextures(denom: ChipDenomination): {
   fCtx.fill();
 
   // 6. Double Champagne-Gold Filigree Inlay Bezel
-  fCtx.strokeStyle = '#d4af37';
-  fCtx.lineWidth = 7;
+  fCtx.strokeStyle = '#9a6f18';
+  fCtx.lineWidth = 8;
   fCtx.beginPath();
   fCtx.arc(cx, cy, 142, 0, Math.PI * 2);
   fCtx.stroke();
 
-  fCtx.strokeStyle = 'rgba(212, 175, 55, 0.45)';
-  fCtx.lineWidth = 2.5;
+  fCtx.strokeStyle = 'rgba(154, 111, 24, 0.55)';
+  fCtx.lineWidth = 3;
   fCtx.beginPath();
   fCtx.arc(cx, cy, 130, 0, Math.PI * 2);
   fCtx.stroke();
 
   // 7. Crown emblem, Denomination typography & Salon Privé subtext
-  fCtx.fillStyle = '#d4af37';
-  fCtx.font = 'bold 26px Georgia, serif';
+  fCtx.fillStyle = denom === 100 ? '#d4af37' : '#855812';
+  fCtx.font = 'bold 28px Georgia, serif';
   fCtx.textAlign = 'center';
   fCtx.textBaseline = 'middle';
   fCtx.fillText('♛', cx, cy - 68);
 
   fCtx.fillStyle = denom === 100 ? '#f3e5ab' : textColor;
-  fCtx.font = 'bold 80px "Cinzel", "Plus Jakarta Sans", Georgia, serif';
+  fCtx.font = 'bold 86px "Cinzel", "Plus Jakarta Sans", Georgia, serif';
   fCtx.fillText(valueLabel, cx, cy - 2);
 
-  fCtx.font = 'bold 20px "Plus Jakarta Sans", sans-serif';
-  fCtx.fillStyle = '#b48a2e';
+  fCtx.font = 'bold 21px "Plus Jakarta Sans", sans-serif';
+  fCtx.fillStyle = denom === 100 ? '#d4af37' : '#78530d';
   fCtx.fillText('MONTE-CARLO', cx, cy + 56);
 
   // 8. Edge canvas for cylinder sides + chamfer shadow bands
@@ -929,8 +957,8 @@ export function createSculptedClayChipGeometry(
         const rad = fr.r + moldWave;
         const px = Math.cos(theta) * rad;
         const pz = Math.sin(theta) * rad;
-        const u = px / (radius * 2) + 0.5;
-        const v = pz / (radius * 2) + 0.5;
+        const u = (sign > 0 ? px : -px) / (radius * 2) + 0.5;
+        const v = 0.5 - pz / (radius * 2);
         row.push(
           pushVertex(
             px,

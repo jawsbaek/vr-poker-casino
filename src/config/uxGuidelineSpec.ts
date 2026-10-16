@@ -29,6 +29,8 @@ export interface UXGuidelineTokens {
     maxCharacterSightlineOcclusionRatio: number;
     /** Minimum character anatomical rig parts (sculpted head, eyes with eyelids/cornea, articulated hands/fingers) */
     minCharacterAnatomicalParts: number;
+    /** Strict mutual exclusivity between 2D DOM HUD and 3D Spatial Rim HUD buttons (never rendered simultaneously) */
+    enforce2D3DHudMutualExclusivity: boolean;
   };
 }
 
@@ -49,5 +51,6 @@ export const UX_GUIDELINE_SPEC: UXGuidelineTokens = {
     maxVisiblePrimaryButtons: 6,
     maxCharacterSightlineOcclusionRatio: 0,
     minCharacterAnatomicalParts: 14,
+    enforce2D3DHudMutualExclusivity: true,
   },
 };

@@ -56,6 +56,10 @@
      6. `Raise / Bet` (Replaced by `Deal Next Hand` during showdown)
 2. **Consolidation of Secondary Tools into the Unified Drawer**
    - Camera angle presets & scenario loader (`3D Inspector`), `GTO Solver` 13×13 range matrix, `Table Talk` quick emotes, manual chip toss (`$1–$100`), audio/music/voice toggles, `Vision Pro (.USDZ)`, and `WebXR` entry are all consolidated inside the top-right **`Menu / Settings` unified drawer**.
+3. **Strict Mutual Exclusivity Between 2D HUD and 3D Spatial Rim HUD (`hud_2d_3d_mutual_exclusivity`)**
+   - The 2D DOM HUD (`[data-ux-layer="main-hud"]`) and the 3D Spatial Rim HUD buttons (`fold`, `call`, `raise`, `peek_or_next` on the Seat #0 leather armrest) must **never be displayed simultaneously**:
+     - **Desktop 2D HUD Mode (`show2DHUD === true && !isInXR`)**: 2D outer-edge HUD panels are rendered; all 4 3D Spatial Rim HUD meshes are strictly hidden (`mesh.visible = false`) and excluded from pointer/controller raycasting.
+     - **Pure 3D Spatial Mode (`show2DHUD === false`) or WebXR Mode (`isInXR === true`)**: All 2D HUD panels (`top-left-status`, `bottom-action-dock`, etc.) are unmounted (`0` visible panels), and the 4 3D Spatial Rim HUD buttons on the leather armrest are visible (`mesh.visible = true`) and raycast-interactive.
 
 ---
 
@@ -78,7 +82,8 @@
 | | `character_human_presence_rig` | All 5 characters equipped with `MeshPhysicalMaterial` skin/cornea shading, blink/gaze rigs, and 5-finger articulated hands |
 | | `webgl_draw_call_budget` | `Draw Calls <= 450` across all camera presets and scenarios |
 | | `spatial_layout_clearance` | `0` clipping/overlap violations between 3D cards, chip stacks, and plaques |
+| | `hud_2d_3d_mutual_exclusivity` | `0` visible 3D Spatial Rim buttons when `show2DHUD === true`; `4` visible 3D Spatial Rim buttons & `0` 2D HUD panels when `show2DHUD === false` or `isInXR === true` |
 | **Tier 2: Sightline & Minimalism** | `zero_character_sightline_occlusion` | `0%` overlap between projected 2D bounding boxes of 3D character heads/torsos (`seat0_pov`) and visible 2D HUD panels |
 | | `primary_action_button_cap` | Visible `<button>` count on main HUD `<= 6` |
 | | `monochrome_gold_color_restraint` | `0` banned saturated/neon colors in computed styles (`color`, `backgroundColor`, `borderColor`) of visible main HUD elements |
-| **Tier 3: Visual Proof & Report** | `multi_scenario_visual_proof` | Automated captures across Preflop, Flop, Turn, River, Showdown, All-In, and Drawer states with JSON report (`allPassed: true`) |
+| **Tier 3: Visual Proof & Report** | `multi_scenario_visual_proof` | Automated captures across 2D HUD mode, Pure 3D Spatial HUD mode, Showdown, and Character Close-Up with JSON report (`allPassed: true`) |

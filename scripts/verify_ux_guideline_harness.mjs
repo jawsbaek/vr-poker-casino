@@ -16,7 +16,7 @@
  *        `bottom-action-dock`).
  *     2. Primary Action Element Cap <= 6: Asserts visible interactive `<button>` count on the
  *        default main HUD is <= 6, and verifies that secondary controls live inside the unified
- *        `메뉴 / 설정` drawer.
+ *        `Menu / Settings` drawer.
  *     3. Minimal Color Palette (Monochrome Obsidian + Warm Ivory + Single Champagne Gold Accent):
  *        Audits classNames and computed RGB/HSL styles of all visible main-HUD elements to enforce
  *        zero banned neon/rainbow hues.
@@ -80,6 +80,14 @@ const BANNED_CLASS_TOKENS = [
 
 const SCENARIOS_TO_VERIFY = [
   {
+    scenario: 'home_title_screen',
+    isTitleScreen: true,
+    preset: 'seat0_pov',
+    show2DHUD: true,
+    screenshot: 'ux_verify_00_home_screen_redesign.png',
+    description: 'Redesigned Home Screen (Sightline-Free Split Dock, <= 3 buttons, 0% face/torso occlusion, Monochrome + Gold)',
+  },
+  {
     scenario: 'preflop_deal',
     preset: 'seat0_pov',
     show2DHUD: true,
@@ -106,6 +114,13 @@ const SCENARIOS_TO_VERIFY = [
     show2DHUD: true,
     screenshot: 'ux_verify_04_showdown_banner_sightline.png',
     description: 'Showdown Multiway with compact top-docked winner banner preserving full character sightlines',
+  },
+  {
+    scenario: 'preflop_deal',
+    preset: 'seat0_pov',
+    show2DHUD: false,
+    screenshot: 'ux_verify_05_seat0_pov_pure_3d_spatial_hud.png',
+    description: 'Seat #0 Player POV in Pure 3D Spatial HUD Mode (0 2D HUD panels, 4 active 3D Spatial Rim buttons)',
   },
 ];
 
@@ -166,16 +181,18 @@ async function runUxGuidelineHarness() {
     await page.waitForTimeout(900);
 
     for (const item of SCENARIOS_TO_VERIFY) {
-      await page.evaluate(
-        ({ scenario, preset, show2DHUD }) => {
-          const api = window.__POKER_DOGFOOD__;
-          api.loadScenario(scenario);
-          api.setCameraPreset(preset);
-          api.setShow2DHUD(show2DHUD);
-          api.setDebugOverlay(false);
-        },
-        item
-      );
+      if (!item.isTitleScreen) {
+        await page.evaluate(
+          ({ scenario, preset, show2DHUD }) => {
+            const api = window.__POKER_DOGFOOD__;
+            api.loadScenario(scenario);
+            api.setCameraPreset(preset);
+            api.setShow2DHUD(show2DHUD);
+            api.setDebugOverlay(false);
+          },
+          item
+        );
+      }
 
       await page.waitForTimeout(850);
 
@@ -207,8 +224,11 @@ async function runUxGuidelineHarness() {
             return rect.width > 0 && rect.height > 0;
           }
 
-          // Collect visible 2D HUD panels
+          // Collect visible 2D HUD or Title Screen panels
           const hudPanelSelectors = [
+            '[data-ux-panel="title-top-left"]',
+            '[data-ux-panel="title-top-right"]',
+            '[data-ux-panel="title-bottom-dock"]',
             '[data-ux-panel="top-left-status"]',
             '[data-ux-panel="top-right-menu"]',
             '[data-ux-panel="bottom-action-dock"]',
@@ -264,8 +284,10 @@ async function runUxGuidelineHarness() {
             }
           }
 
-          // Rule 2: Action Element Minimalism (<= 6 visible buttons on main HUD)
-          const mainHudRoot = document.querySelector('[data-ux-layer="main-hud"]');
+          // Rule 2: Action Element Minimalism (<= 6 visible buttons on main HUD or Title Screen)
+          const mainHudRoot =
+            document.querySelector('[data-ux-layer="main-hud"]') ||
+            document.querySelector('[data-ux-layer="title-screen"]');
           const allButtons = mainHudRoot
             ? Array.from(mainHudRoot.querySelectorAll('button')).filter((btn) => {
                 // Exclude buttons inside an open drawer if any
@@ -366,8 +388,27 @@ async function runUxGuidelineHarness() {
             }
           }
 
+          const tableSafeZones = api.getTableSafeZoneScreenBounds
+            ? api.getTableSafeZoneScreenBounds()
+            : null;
+          const spatialButtons = tableSafeZones?.spatialButtons || [];
+          const visibleSpatialButtonsCount = spatialButtons.filter((b) => b.visible).length;
+
+          const mutualExclusivityCheck = expectHUD
+            ? {
+                id: 'hud_2d_3d_mutual_exclusivity',
+                passed: visibleSpatialButtonsCount === 0 && hudPanels.length >= 2,
+                details: `mode=2D_HUD, visible2DPanels=${hudPanels.length} (>=2), visible3DSpatialButtons=${visibleSpatialButtonsCount} (expected 0)`,
+              }
+            : {
+                id: 'hud_2d_3d_mutual_exclusivity',
+                passed: visibleSpatialButtonsCount === 4 && hudPanels.length === 0,
+                details: `mode=3D_SPATIAL_HUD, visible2DPanels=${hudPanels.length} (expected 0), visible3DSpatialButtons=${visibleSpatialButtonsCount} (expected 4)`,
+              };
+
           const tier2Checks = expectHUD
             ? [
+                mutualExclusivityCheck,
                 {
                   id: 'sightline_zero_face_torso_occlusion',
                   passed:
@@ -390,12 +431,13 @@ async function runUxGuidelineHarness() {
                   details: `classViolations=${classViolations.length}, computedColorViolations=${computedColorViolations.length}`,
                 },
               ]
-            : [];
+            : [mutualExclusivityCheck];
 
           return {
             tier1SpatialAudit,
             characterBounds,
             hudPanels,
+            visibleSpatialButtonsCount,
             sightlineOverlaps,
             visibleButtonCount: allButtons.length,
             visibleButtonLabels,

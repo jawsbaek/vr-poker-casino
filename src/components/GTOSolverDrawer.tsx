@@ -95,7 +95,7 @@ export const CompactGTOPill: React.FC<CompactGTOPillProps> = ({
       data-ux-component="gto-telemetry-strip"
       onClick={onOpenFullDrawer}
       className="cursor-pointer rounded-xl border border-[#d4af37]/35 bg-[#090c12]/92 px-3 py-1.5 shadow-xl transition-all hover:border-[#d4af37]/70"
-      title="클릭하여 13×13 GTO 레인지 매트릭스 및 상세 솔버 열기"
+      title="Click to open 13×13 GTO Range Matrix & Detailed Solver"
     >
       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
         <div className="flex flex-wrap items-center gap-2">
@@ -119,7 +119,7 @@ export const CompactGTOPill: React.FC<CompactGTOPillProps> = ({
           {!cardsVisible ? (
             <span className="inline-flex items-center gap-1 text-[#94a3b8] text-[10px]">
               <Lock className="w-3 h-3 text-[#d4af37]" />
-              <span>홀카드 확인(Peek) 시 실시간 에쿼티 및 최적 빈도 표시</span>
+              <span>Hold Peek to view real-time equity & optimal frequencies</span>
             </span>
           ) : (
             <>
@@ -127,7 +127,7 @@ export const CompactGTOPill: React.FC<CompactGTOPillProps> = ({
                 {analysis.heroCombo} · Eq <strong className="text-[#f3e5ab]">{activeEquity}%</strong>
               </span>
               <span className="px-2 py-0.5 rounded bg-[#d4af37]/20 border border-[#d4af37]/55 text-[#f3e5ab] font-extrabold">
-                추천: {activeRec.bestActionLabel} ({activeRec.bestActionEvBB >= 0 ? '+' : ''}
+                Best: {activeRec.bestActionLabel} ({activeRec.bestActionEvBB >= 0 ? '+' : ''}
                 {activeRec.bestActionEvBB.toFixed(2)} BB)
               </span>
             </>

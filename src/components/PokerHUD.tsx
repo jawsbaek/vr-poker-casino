@@ -44,6 +44,7 @@ import {
   CameraPresetId,
   DogfoodScenarioId,
   SpatialAuditReport,
+  Suit,
 } from '../types/poker';
 import {
   getRankLabel,
@@ -59,6 +60,29 @@ import {
 } from './GTOSolverDrawer';
 import { pokerAudio } from '../audio/pokerAudio';
 import { geminiMedia } from '../services/geminiMediaService';
+
+export const getSuitCardStyle = (
+  suit: Suit,
+  fourColor: boolean
+): { color: string; borderClass: string } => {
+  if (fourColor) {
+    switch (suit) {
+      case 'spades':
+        return { color: '#0f172a', borderClass: 'border-slate-400' };
+      case 'hearts':
+        return { color: '#dc2626', borderClass: 'border-red-400' };
+      case 'diamonds':
+        return { color: '#2563eb', borderClass: 'border-blue-400' };
+      case 'clubs':
+        return { color: '#16a34a', borderClass: 'border-emerald-500' };
+    }
+  }
+  const isRed = suit === 'hearts' || suit === 'diamonds';
+  return {
+    color: isRed ? '#dc2626' : '#0f172a',
+    borderClass: isRed ? 'border-red-400' : 'border-slate-400',
+  };
+};
 
 interface PokerHUDProps {
   isTitleMode: boolean;
@@ -180,6 +204,8 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
   const [showGTODrawer, setShowGTODrawer] = useState(false);
   const [showDogfoodDrawer, setShowDogfoodDrawer] = useState(false);
   const [showBanterFeed, setShowBanterFeed] = useState(true);
+  const [fourColorDeck, setFourColorDeck] = useState<boolean>(true);
+  const [showInBB, setShowInBB] = useState<boolean>(false);
   const [betAmount, setBetAmount] = useState<number>(table.bigBlind * 2);
   const [apiKeyInput, setApiKeyInput] = useState<string>(() => {
     try {
@@ -197,6 +223,50 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
     Math.max(table.bigBlind, table.currentHighBet + table.minRaise)
   );
   const maxAllowedBet = humanPlayer.chips + humanPlayer.currentBet;
+  const effectiveRaiseAmount = Math.min(maxAllowedBet, Math.max(betAmount, minAllowedBet));
+
+  const formatChipValue = (amount: number): string => {
+    if (!showInBB) return `$${amount}`;
+    const bb = Math.max(1, table.bigBlind);
+    const bbVal = amount / bb;
+    const formatted = Number.isInteger(bbVal) ? `${bbVal}` : bbVal.toFixed(1).replace(/\.0$/, '');
+    return `${formatted} BB`;
+  };
+
+  // True No-Limit Hold'em Pot-Fraction Math & Street-Aware Quick-Bet Presets
+  const potAfterCall = table.pot + callAmount;
+  const clampRaise = (rawTotalBet: number) =>
+    Math.min(maxAllowedBet, Math.max(minAllowedBet, Math.round(rawTotalBet)));
+  const calcPotFractionBet = (fraction: number) =>
+    clampRaise(table.currentHighBet + Math.max(table.bigBlind, Math.round(potAfterCall * fraction)));
+
+  const quickBetPresets: { label: string; amount: number; hotkey?: string }[] =
+    table.phase === 'preflop'
+      ? table.currentHighBet <= table.bigBlind
+        ? [
+            { label: 'Min', amount: minAllowedBet, hotkey: '1' },
+            { label: '2.2x', amount: clampRaise(table.bigBlind * 2.2), hotkey: '2' },
+            { label: '2.5x', amount: clampRaise(table.bigBlind * 2.5), hotkey: '3' },
+            { label: '3x', amount: clampRaise(table.bigBlind * 3), hotkey: '4' },
+            { label: 'Pot', amount: calcPotFractionBet(1.0), hotkey: '5' },
+            { label: 'Max', amount: maxAllowedBet },
+          ]
+        : [
+            { label: 'Min', amount: minAllowedBet, hotkey: '1' },
+            { label: '2.5x', amount: clampRaise(table.currentHighBet * 2.5), hotkey: '2' },
+            { label: '3x', amount: clampRaise(table.currentHighBet * 3), hotkey: '3' },
+            { label: '4x', amount: clampRaise(table.currentHighBet * 4), hotkey: '4' },
+            { label: 'Pot', amount: calcPotFractionBet(1.0), hotkey: '5' },
+            { label: 'Max', amount: maxAllowedBet },
+          ]
+      : [
+          { label: 'Min', amount: minAllowedBet, hotkey: '1' },
+          { label: '33%', amount: calcPotFractionBet(0.33), hotkey: '2' },
+          { label: '50%', amount: calcPotFractionBet(0.5), hotkey: '3' },
+          { label: '75%', amount: calcPotFractionBet(0.75), hotkey: '4' },
+          { label: 'Pot', amount: calcPotFractionBet(1.0), hotkey: '5' },
+          { label: 'Max', amount: maxAllowedBet },
+        ];
 
   // Keep slider synced with table minAllowedBet or physically staged chips
   useEffect(() => {
@@ -215,6 +285,79 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
     minAllowedBet,
     maxAllowedBet,
     humanPlayer.currentBet,
+  ]);
+
+  // Desktop Grinding Keyboard Shortcuts (F = Fold, C = Check/Call, R/B = Bet/Raise, 1-5 = Sizing Presets)
+  useEffect(() => {
+    if (
+      isTitleMode ||
+      !humanPlayer.isTurn ||
+      humanPlayer.folded ||
+      humanPlayer.allIn ||
+      table.phase === 'showdown'
+    ) {
+      return;
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (e.code === 'KeyF') {
+        e.preventDefault();
+        onAction({ type: 'fold' });
+      } else if (e.code === 'KeyC') {
+        e.preventDefault();
+        onAction(isFreeToCheck ? { type: 'check' } : { type: 'call' });
+      } else if (e.code === 'KeyR' || e.code === 'KeyB') {
+        e.preventDefault();
+        if (humanPlayer.chips <= callAmount || effectiveRaiseAmount >= maxAllowedBet) {
+          onAction({ type: 'allin' });
+        } else {
+          onAction({ type: 'raise', amount: effectiveRaiseAmount });
+        }
+      } else if (
+        humanPlayer.chips > callAmount &&
+        (e.code === 'Digit1' ||
+          e.code === 'Digit2' ||
+          e.code === 'Digit3' ||
+          e.code === 'Digit4' ||
+          e.code === 'Digit5')
+      ) {
+        const presetIdx = Number(e.code.replace('Digit', '')) - 1;
+        const preset = quickBetPresets[presetIdx];
+        if (preset) {
+          e.preventDefault();
+          setBetAmount(preset.amount);
+          pokerAudio.playTick();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isTitleMode,
+    humanPlayer.isTurn,
+    humanPlayer.folded,
+    humanPlayer.allIn,
+    humanPlayer.chips,
+    table.phase,
+    isFreeToCheck,
+    callAmount,
+    effectiveRaiseAmount,
+    maxAllowedBet,
+    quickBetPresets,
+    onAction,
   ]);
 
   const toggleSound = () => {
@@ -322,81 +465,81 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
   const renderVisionProModal = () => {
     if (!showVisionProModal) return null;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md pointer-events-auto">
-        <div className="glass-panel max-w-xl w-full p-6 rounded-3xl border border-amber-400/50 shadow-2xl text-left">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#090c12]/88 backdrop-blur-md pointer-events-auto">
+        <div className="bg-[#090c12]/96 max-w-xl w-full p-6 rounded-3xl border border-[#d4af37]/50 shadow-2xl text-left">
           <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
             <div className="flex items-center gap-2.5">
-              <Glasses className="w-5 h-5 text-amber-400" />
-              <h3 className="text-base font-black tracking-wide text-white uppercase">
-                Apple Vision Pro (visionOS) Test & Calibration Suite
+              <Glasses className="w-5 h-5 text-[#d4af37]" />
+              <h3 className="text-base font-black tracking-wide text-[#f8fafc] uppercase">
+                Apple Vision Pro (visionOS) Test &amp; Calibration Suite
               </h3>
             </div>
             <button
               onClick={() => setShowVisionProModal(false)}
-              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300"
+              className="px-2.5 py-1 rounded-lg bg-[#0f141c] hover:bg-slate-800 text-xs font-bold text-[#94a3b8] hover:text-[#f8fafc] border border-slate-800"
             >
               Close
             </button>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4 text-xs">
-            <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
-              <div className="text-[10px] text-slate-400 uppercase">HTTPS Context</div>
-              <div className={`font-mono font-bold mt-0.5 ${isSecure ? 'text-emerald-400' : 'text-amber-400'}`}>
+            <div className="bg-[#0f141c] p-2.5 rounded-xl border border-slate-800">
+              <div className="text-[10px] text-[#94a3b8] uppercase">HTTPS Context</div>
+              <div className={`font-mono font-bold mt-0.5 ${isSecure ? 'text-[#f3e5ab]' : 'text-[#d4af37]'}`}>
                 {isSecure ? '✓ Secure' : '⚠ HTTP Local'}
               </div>
             </div>
-            <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
-              <div className="text-[10px] text-slate-400 uppercase">navigator.xr</div>
-              <div className={`font-mono font-bold mt-0.5 ${hasWebXRAPI ? 'text-emerald-400' : 'text-amber-400'}`}>
+            <div className="bg-[#0f141c] p-2.5 rounded-xl border border-slate-800">
+              <div className="text-[10px] text-[#94a3b8] uppercase">navigator.xr</div>
+              <div className={`font-mono font-bold mt-0.5 ${hasWebXRAPI ? 'text-[#f3e5ab]' : 'text-[#94a3b8]'}`}>
                 {hasWebXRAPI ? '✓ Present' : '✗ Disabled'}
               </div>
             </div>
-            <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
-              <div className="text-[10px] text-slate-400 uppercase">immersive-vr</div>
-              <div className={`font-mono font-bold mt-0.5 ${isXRSupported ? 'text-emerald-400' : 'text-amber-400'}`}>
+            <div className="bg-[#0f141c] p-2.5 rounded-xl border border-slate-800">
+              <div className="text-[10px] text-[#94a3b8] uppercase">immersive-vr</div>
+              <div className={`font-mono font-bold mt-0.5 ${isXRSupported ? 'text-[#f3e5ab]' : 'text-[#d4af37]'}`}>
                 {isXRSupported ? '✓ Ready' : 'Enable Flag'}
               </div>
             </div>
-            <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
-              <div className="text-[10px] text-slate-400 uppercase">Stereo Draw Calls</div>
-              <div className="font-mono font-bold text-blue-400 mt-0.5">{drawCalls} / 35 max</div>
+            <div className="bg-[#0f141c] p-2.5 rounded-xl border border-slate-800">
+              <div className="text-[10px] text-[#94a3b8] uppercase">Stereo Draw Calls</div>
+              <div className="font-mono font-bold text-[#f3e5ab] mt-0.5">{drawCalls} / 35 max</div>
             </div>
           </div>
 
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3.5 mb-4 text-xs text-slate-300 space-y-1.5">
-            <div className="font-bold text-amber-300 uppercase tracking-wider text-[11px]">
+          <div className="bg-[#0f141c] border border-slate-800 rounded-2xl p-3.5 mb-4 text-xs text-[#94a3b8] space-y-1.5">
+            <div className="font-bold text-[#f3e5ab] uppercase tracking-wider text-[11px]">
               Real Apple Vision Pro Setup (visionOS Safari):
             </div>
             <div>
-              1. Open <strong>Settings → Apps → Safari → Advanced → Feature Flags</strong> on Vision Pro.
+              1. Open <strong className="text-[#f8fafc]">Settings → Apps → Safari → Advanced → Feature Flags</strong> on Vision Pro.
             </div>
             <div>
-              2. Enable <strong>WebXR Device API</strong>, <strong>WebXR Hand Input Module</strong>, and <strong>WebXR VRModule</strong>.
+              2. Enable <strong className="text-[#f8fafc]">WebXR Device API</strong>, <strong className="text-[#f8fafc]">WebXR Hand Input Module</strong>, and <strong className="text-[#f8fafc]">WebXR VRModule</strong>.
             </div>
             <div>
-              3. Look at any chip stack, hole card, or spatial button and <strong>pinch thumb + index finger</strong> (`transient-pointer`) or reach out with direct 25-joint optical hand tracking.
+              3. Look at any chip stack, hole card, or spatial button and <strong className="text-[#f8fafc]">pinch thumb + index finger</strong> (`transient-pointer`) or reach out with direct 25-joint optical hand tracking.
             </div>
           </div>
 
-          <div className="bg-slate-900/90 border border-amber-400/30 rounded-2xl p-3.5 mb-4">
+          <div className="bg-[#0f141c] border border-[#d4af37]/30 rounded-2xl p-3.5 mb-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#f3e5ab]">
                 Interactive Eye-Gaze + Pinch Calibration Targets
               </span>
-              <span className="text-[11px] font-mono text-emerald-400">{lastPinchTarget}</span>
+              <span className="text-[11px] font-mono text-[#d4af37]">{lastPinchTarget}</span>
             </div>
             <div className="grid grid-cols-3 gap-2.5">
               {['Left Rail ($25)', 'Center Pot', 'Right Rail (Peek)'].map((label, idx) => (
                 <button
                   key={label}
                   onClick={() => handleCalibrationPinch(idx, label)}
-                  className="py-3 px-2 rounded-xl bg-slate-950 hover:bg-amber-500/20 active:scale-95 border border-amber-400/40 flex flex-col items-center justify-center gap-1 transition-all"
+                  className="py-3 px-2 rounded-xl bg-[#090c12] hover:bg-[#d4af37]/15 active:scale-95 border border-[#d4af37]/40 flex flex-col items-center justify-center gap-1 transition-all"
                 >
-                  <span className="w-6 h-6 rounded-full border-2 border-amber-400 flex items-center justify-center text-[11px] font-mono font-bold text-amber-300">
+                  <span className="w-6 h-6 rounded-full border-2 border-[#d4af37] flex items-center justify-center text-[11px] font-mono font-bold text-[#f3e5ab]">
                     {pinchCalibrationHits[idx]}
                   </span>
-                  <span className="text-[11px] font-bold text-white">{label}</span>
+                  <span className="text-[11px] font-bold text-[#f8fafc]">{label}</span>
                 </button>
               ))}
             </div>
@@ -406,7 +549,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
             <a
               rel="ar"
               href="/models/vip_poker_table.usdz"
-              className="flex-1 py-2.5 px-4 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 font-bold text-xs flex items-center justify-center gap-2 text-center"
+              className="flex-1 py-2.5 px-4 rounded-xl bg-[#d4af37]/20 hover:bg-[#d4af37]/30 border border-[#d4af37]/50 text-[#f3e5ab] font-bold text-xs flex items-center justify-center gap-2 text-center"
             >
               <img src="/models/vip_poker_table.usdz" alt="" className="hidden" />
               <span>📦 Open 1:1 Table in visionOS AR QuickLook (.USDZ)</span>
@@ -415,7 +558,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
               href="/models/vision_pro_ergonomics_report.json"
               target="_blank"
               rel="noreferrer"
-              className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center"
+              className="py-2.5 px-4 rounded-xl bg-[#0f141c] hover:bg-slate-800 border border-slate-800 text-[#f8fafc] font-bold text-xs flex items-center justify-center"
             >
               <span>Blender 5.2 Ergonomics JSON</span>
             </a>
@@ -426,170 +569,125 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
   };
 
   // ==========================================================================
-  // 1. CINEMATIC TITLE & ENTRY SCREEN OVERLAY
+  // 1. REDESIGNED HOME SCREEN OVERLAY (Sightline-Free Split Dock,
+  //    3 Buttons Total, 0% Character Face/Torso Occlusion, Strict 3-Tone Luxury)
   // ==========================================================================
   if (isTitleMode) {
     return (
-      <div className="absolute inset-0 z-20 flex flex-col justify-between p-6 bg-gradient-to-b from-slate-950/80 via-slate-950/35 to-slate-950/90 pointer-events-auto">
+      <div
+        data-ux-layer="title-screen"
+        className="absolute inset-0 z-20 flex flex-col justify-between p-5 sm:p-7 pointer-events-none select-none"
+      >
         {renderVisionProModal()}
-        {/* Top Header */}
-        <div className="flex items-center justify-between max-w-6xl w-full mx-auto">
-          <div className="glass-panel px-4 py-2 rounded-xl flex items-center gap-2.5 border-amber-400/30">
-            <span className="text-xl">♠️</span>
-            <span className="text-xs font-extrabold tracking-widest uppercase text-amber-300">
-              Monte Carlo Private VIP Suite • Nano Banana + Gemini 3.8 TTS + Lyria 3
-            </span>
+
+        {/* Top Outer Edge: Minimal Hold'em Identity (Left) + Quiet Audio Toggle (Right) */}
+        <div className="flex items-start justify-between gap-4 w-full pointer-events-auto">
+          <div
+            data-ux-panel="title-top-left"
+            className="bg-[#090c12]/88 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-[#d4af37]/35 shadow-2xl flex items-center gap-3"
+          >
+            <div className="w-7 h-7 rounded-xl bg-[#0f141c] border border-[#d4af37]/45 flex items-center justify-center text-[#d4af37] text-sm font-black shadow-inner">
+              ♠
+            </div>
+            <div className="flex items-baseline gap-2.5">
+              <span className="text-xs sm:text-sm font-black tracking-[0.18em] uppercase text-[#f8fafc]">
+                NO-LIMIT HOLD&apos;EM
+              </span>
+              <span className="text-[11px] font-mono font-semibold text-[#d4af37]">
+                $1 / $2 · 5-MAX
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div data-ux-panel="title-top-right" className="flex items-center">
             <button
-              onClick={() => setShowVisionProModal(true)}
-              className="glass-panel px-3.5 py-2 rounded-xl flex items-center gap-2 text-xs font-bold text-amber-300 border border-amber-400/40 hover:bg-amber-500/15 transition-all"
-            >
-              <Glasses className="w-4 h-4 text-amber-300" />
-              <span>Vision Pro Test & .USDZ</span>
-            </button>
-
-            <button
+              data-testid="title-audio-toggle"
               onClick={toggleSound}
-              className="glass-panel px-3.5 py-2 rounded-xl flex items-center gap-2 text-xs font-bold text-slate-200 hover:border-amber-400/50 transition-all"
+              className="bg-[#090c12]/88 hover:bg-[#0f141c] backdrop-blur-md px-3.5 py-2.5 rounded-2xl border border-[#d4af37]/35 text-xs font-bold text-[#f8fafc] flex items-center gap-2 transition-all shadow-2xl active:scale-95"
+              title={isMuted ? 'Unmute table audio' : 'Mute table audio'}
             >
               {isMuted ? (
                 <>
-                  <VolumeX className="w-4 h-4 text-red-400" />
-                  <span>Audio Muted</span>
+                  <VolumeX className="w-4 h-4 text-[#94a3b8]" />
+                  <span className="text-[#94a3b8]">Audio Muted</span>
                 </>
               ) : (
                 <>
-                  <Volume2 className="w-4 h-4 text-emerald-400" />
-                  <span>Spatial Audio & Voice On</span>
+                  <Volume2 className="w-4 h-4 text-[#d4af37]" />
+                  <span className="text-[#f3e5ab]">Audio On</span>
                 </>
               )}
             </button>
           </div>
         </div>
 
-        {/* Center Hero Card */}
-        <div className="my-auto max-w-2xl w-full mx-auto glass-panel p-7 sm:p-8 rounded-3xl border border-amber-400/40 shadow-2xl text-center backdrop-blur-xl">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 text-xs font-bold uppercase tracking-widest mb-3">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>5-Max Sit & Go Championship • $1,000 Prize Pool</span>
+        {/* Center 75%+ Sightline Corridor intentionally left 100% open so the live 3D table, felt, and characters take the spotlight */}
+
+        {/* Bottom-Center Streamlined Entry Pill */}
+        <div
+          data-ux-panel="title-bottom-dock"
+          className="w-full max-w-xl mx-auto bg-[#090c12]/92 backdrop-blur-xl px-5 py-3.5 rounded-2xl border border-[#d4af37]/45 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4 pointer-events-auto"
+        >
+          <div className="text-center sm:text-left">
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#d4af37]">
+              PRIVATE SALON · 5-MAX SIT &amp; GO · $200 BUY-IN
+            </div>
+            <h1 className="text-lg sm:text-xl font-black tracking-tight text-[#f8fafc] mt-0.5">
+              TEXAS HOLD&apos;EM
+            </h1>
           </div>
 
-          <h1 className="text-3xl sm:text-5xl font-black tracking-tight gold-gradient-text mb-2.5">
-            REALISTIC VR POKER CASINO
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-300 max-w-xl mx-auto mb-5 leading-relaxed">
-            Step into the private mahogany & emerald velvet suite. Read live physical tells across
-            four articulated AI sharks—including <strong>Bao</strong> scrolling his glowing phone
-            until he hits a monster hand—backed by Gemini 3.8 TTS banter and Lyria lounge jazz.
-          </p>
-
-          {/* Cast Preview Strip (Nano Banana Portraits) */}
-          <div className="grid grid-cols-4 gap-2.5 max-w-xl mx-auto mb-6">
-            {players
-              .filter((p) => !p.isHuman)
-              .map((p) => (
-                <div
-                  key={p.id}
-                  className="bg-slate-900/80 border border-slate-800 rounded-xl p-2 flex flex-col items-center text-center"
-                >
-                  <img
-                    src={p.avatarUrl}
-                    alt={p.name}
-                    className="w-11 h-11 rounded-full object-cover border-2 mb-1"
-                    style={{ borderColor: p.color }}
-                  />
-                  <div className="text-[11px] font-bold text-white truncate w-full">
-                    {p.name.split(' ')[0]}
-                  </div>
-                  <div className="text-[9px] text-slate-400 truncate w-full">
-                    {p.persona === 'heavy_phone'
-                      ? '📱 Phone Watcher'
-                      : p.persona === 'general_man'
-                      ? '⌚ Tailored Shark'
-                      : p.persona === 'woman'
-                      ? '🥂 Poised Rock'
-                      : '🕶️ Flashy Maniac'}
-                  </div>
-                </div>
-              ))}
-          </div>
-
-          {/* Primary Launch Actions */}
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <div className="flex items-center gap-2.5 shrink-0">
             <button
+              data-testid="title-start-desktop"
               onClick={onStartDesktopGame}
-              className="flex-1 py-3.5 px-6 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-base tracking-wide shadow-xl transition-all active:scale-98 flex items-center justify-center gap-2"
+              className="py-2.5 px-6 rounded-xl bg-gradient-to-r from-[#d4af37] to-[#f3e5ab] hover:brightness-110 text-[#090c12] font-black text-xs sm:text-sm tracking-wider uppercase shadow-xl transition-all active:scale-95 flex items-center gap-2"
             >
-              <span>Play in 3D Desktop Mode</span>
-              <ArrowRight className="w-5 h-5" />
+              <span>Take Your Seat</span>
+              <ArrowRight className="w-4 h-4" />
             </button>
 
             <button
+              data-testid="title-start-vr"
               onClick={() => {
                 onStartDesktopGame();
                 onEnterVR();
               }}
-              className={`flex-1 py-3.5 px-6 rounded-2xl font-black text-base tracking-wide transition-all flex items-center justify-center gap-2.5 border ${
-                isXRSupported
-                  ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-400/50 shadow-lg'
-                  : 'bg-slate-900/80 hover:bg-slate-800 text-amber-200 border-amber-400/30'
-              }`}
+              className="py-2.5 px-4 rounded-xl bg-[#0f141c] hover:bg-slate-900 text-[#f3e5ab] border border-[#d4af37]/45 font-bold text-xs sm:text-sm tracking-wider uppercase transition-all active:scale-95 flex items-center gap-1.5"
+              title="Enter immersive WebXR / VR table view"
             >
-              <Glasses className="w-5 h-5 text-amber-300" />
-              <span>{isXRSupported ? 'Enter WebXR Casino' : 'Launch WebXR / VR Mode'}</span>
+              <Glasses className="w-4 h-4 text-[#d4af37]" />
+              <span>{isXRSupported ? 'Enter VR' : 'VR Mode'}</span>
             </button>
-          </div>
-        </div>
-
-        {/* Bottom Tactile Gesture Guide */}
-        <div className="max-w-4xl w-full mx-auto grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-          <div className="glass-panel px-3.5 py-2.5 rounded-xl flex items-center gap-2.5">
-            <Hand className="w-4 h-4 text-amber-400 shrink-0" />
-            <div>
-              <div className="font-bold text-white">Pinch / Drag Chips</div>
-              <div className="text-[11px] text-slate-400">Drop into gold ring to bet</div>
-            </div>
-          </div>
-          <div className="glass-panel px-3.5 py-2.5 rounded-xl flex items-center gap-2.5">
-            <Smartphone className="w-4 h-4 text-cyan-400 shrink-0" />
-            <div>
-              <div className="font-bold text-white">Spot Live AI Tells</div>
-              <div className="text-[11px] text-slate-400">Watch when Bao puts phone down</div>
-            </div>
-          </div>
-          <div className="glass-panel px-3.5 py-2.5 rounded-xl flex items-center gap-2.5">
-            <MessageSquare className="w-4 h-4 text-purple-400 shrink-0" />
-            <div>
-              <div className="font-bold text-white">Table Talk & Banter</div>
-              <div className="text-[11px] text-slate-400">Call out AI players with emotes</div>
-            </div>
-          </div>
-          <div className="glass-panel px-3.5 py-2.5 rounded-xl flex items-center gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <div>
-              <div className="font-bold text-white">Double-Tap Felt</div>
-              <div className="text-[11px] text-slate-400">Knock table to Check</div>
-            </div>
           </div>
         </div>
       </div>
     );
   }
 
+
   // ==========================================================================
-  // 2. IN-GAME HUD OVERLAY (Sightline-Safe Outer-Edge Architecture, <= 6 Buttons,
-  //    Monochrome Deep Obsidian + Warm Ivory + Single Champagne Gold Accent)
+  // 2. IN-GAME HUD OVERLAY (Strict 2D vs. 3D Spatial HUD Mutual Exclusivity,
+  //    Sightline-Safe Outer-Edge Architecture, <= 6 Buttons, Monochrome + Gold)
   // ==========================================================================
+  if (isInXR) {
+    // In WebXR / Vision Pro mode, 3D Spatial Rim HUD buttons are exclusively active; 2D DOM HUD is suppressed.
+    return null;
+  }
+
   if (!show2DHUD) {
+    // In Pure 3D Spatial HUD mode, the 4 3D Spatial Rim buttons are active on the leather armrest;
+    // only a single compact switcher badge is rendered in the top-right corner to return to 2D HUD mode.
     return (
-      <div className="absolute top-3 right-4 z-20 flex items-center gap-2 pointer-events-auto">
+      <div
+        data-ux-layer="spatial-3d-mode-switcher"
+        className="absolute top-3 right-4 z-20 flex items-center gap-2 pointer-events-auto"
+      >
         <button
           onClick={onToggle2DHUD}
           className="px-3 py-1.5 rounded-xl bg-[#090c12]/90 hover:bg-[#0f141c] border border-[#d4af37]/50 text-[#f3e5ab] text-xs font-bold tracking-wider uppercase shadow-xl"
         >
-          HUD 표시
+          2D HUD 전환 (현재: 3D 공간 HUD)
         </button>
       </div>
     );
@@ -802,7 +900,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
                 onClick={onToggle2DHUD}
                 className="px-2 py-0.5 rounded bg-[#d4af37]/15 border border-[#d4af37]/40 text-[#f3e5ab] text-[10px] font-bold"
               >
-                클린 3D 뷰 (HUD 숨김)
+                3D 공간 HUD 전환 (2D 숨김)
               </button>
             </div>
             <div className="grid grid-cols-2 gap-1.5">
