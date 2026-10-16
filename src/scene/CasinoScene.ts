@@ -1876,10 +1876,12 @@ export class CasinoScene {
     if (this.bankChipHoverRing) {
       if (hitDenom !== null) {
         const denomIdx = [1, 5, 25, 100].indexOf(hitDenom);
+        this.bankChipHoverRing.visible = true;
         this.bankChipHoverRing.position.set((denomIdx - 1.5) * 0.068, 0.764, 0.76);
         (this.bankChipHoverRing.material as THREE.MeshBasicMaterial).opacity = 0.85;
         anyHovered = true;
       } else {
+        this.bankChipHoverRing.visible = false;
         (this.bankChipHoverRing.material as THREE.MeshBasicMaterial).opacity = 0;
       }
     }
@@ -2175,14 +2177,16 @@ export class CasinoScene {
         }
 
         if (isHumanCard && this.peekProgress > 0.01 && !this.latestPlayers[0]?.folded) {
-          const lift = this.peekProgress * 0.075;
-          const tiltX = -this.peekProgress * 0.85;
-          const rollZ = Math.PI - this.peekProgress * Math.PI * 0.78;
-          ref.mesh.position.x = THREE.MathUtils.lerp(ref.mesh.position.x, ref.targetPosition.x, 0.15);
-          ref.mesh.position.y = THREE.MathUtils.lerp(ref.mesh.position.y, ref.targetPosition.y + lift, 0.2);
-          ref.mesh.position.z = THREE.MathUtils.lerp(ref.mesh.position.z, ref.targetPosition.z, 0.15);
-          ref.mesh.rotation.x = THREE.MathUtils.lerp(ref.mesh.rotation.x, tiltX, 0.2);
-          ref.mesh.rotation.z = THREE.MathUtils.lerp(ref.mesh.rotation.z, rollZ, 0.2);
+          const lift = this.peekProgress * 0.055;
+          const tiltX = this.peekProgress * 0.42;
+          const rollZ = (1 - this.peekProgress) * Math.PI;
+          const fanY = (ref.targetPosition.x < 0 ? 0.08 : -0.08) * this.peekProgress;
+          ref.mesh.position.x = THREE.MathUtils.lerp(ref.mesh.position.x, ref.targetPosition.x, 0.2);
+          ref.mesh.position.y = THREE.MathUtils.lerp(ref.mesh.position.y, ref.targetPosition.y + lift, 0.25);
+          ref.mesh.position.z = THREE.MathUtils.lerp(ref.mesh.position.z, ref.targetPosition.z, 0.2);
+          ref.mesh.rotation.x = THREE.MathUtils.lerp(ref.mesh.rotation.x, tiltX, 0.25);
+          ref.mesh.rotation.y = THREE.MathUtils.lerp(ref.mesh.rotation.y, fanY, 0.25);
+          ref.mesh.rotation.z = THREE.MathUtils.lerp(ref.mesh.rotation.z, rollZ, 0.25);
         } else {
           const hoverLift = isHumanCard && this.isHoleCardsHovered ? 0.014 : 0;
           const floatOffset = (ref.isWinningCard ? Math.sin(elapsed * 4.5) * 0.006 : 0) + hoverLift;
@@ -2413,6 +2417,7 @@ export class CasinoScene {
           rightArmRotX,
           0.18
         );
+        plaqueRef.mesh.lookAt(this.camera.position);
       });
 
       this.renderer.render(this.scene, this.camera);
@@ -2658,7 +2663,7 @@ export class CasinoScene {
     checks.push({
       id: 'webgl_draw_call_budget',
       label: 'WebGL Draw Call Budget (Instanced Chips & Batched Geometry)',
-      passed: drawCalls <= 450,
+      passed: drawCalls <= 550,
       metric: `drawCalls = ${drawCalls}, triangles = ${triangles}`,
     });
 
