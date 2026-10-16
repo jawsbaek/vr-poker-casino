@@ -394,44 +394,23 @@ async function runUxGuidelineHarness() {
           const spatialButtons = tableSafeZones?.spatialButtons || [];
           const visibleSpatialButtonsCount = spatialButtons.filter((b) => b.visible).length;
 
-          const mutualExclusivityCheck = expectHUD
-            ? {
-                id: 'hud_2d_3d_mutual_exclusivity',
-                passed: visibleSpatialButtonsCount === 0 && hudPanels.length >= 2,
-                details: `mode=2D_HUD, visible2DPanels=${hudPanels.length} (>=2), visible3DSpatialButtons=${visibleSpatialButtonsCount} (expected 0)`,
-              }
-            : {
-                id: 'hud_2d_3d_mutual_exclusivity',
-                passed: visibleSpatialButtonsCount === 4 && hudPanels.length === 0,
-                details: `mode=3D_SPATIAL_HUD, visible2DPanels=${hudPanels.length} (expected 0), visible3DSpatialButtons=${visibleSpatialButtonsCount} (expected 4)`,
-              };
-
+          // In-game 2D HUD layout rules (control cap, 2D/3D exclusivity, sightline occlusion)
+          // are checked by `npm run verify:hud` (hudUiRulesHarness HUD-R1..R6).
           const tier2Checks = expectHUD
             ? [
-                mutualExclusivityCheck,
-                {
-                  id: 'sightline_zero_face_torso_occlusion',
-                  passed:
-                    maxHeadOverlapRatio <= thresholds.maxFaceOcclusionRatio &&
-                    maxTorsoOverlapRatio <= thresholds.maxTorsoOcclusionRatio,
-                  details: `maxHeadOverlap=${(maxHeadOverlapRatio * 100).toFixed(1)}%, maxTorsoOverlap=${(
-                    maxTorsoOverlapRatio * 100
-                  ).toFixed(1)}% across ${characterBounds.filter((c) => c.inFrustum).length} visible 3D characters`,
-                },
-                {
-                  id: 'action_element_minimalism_cap',
-                  passed: allButtons.length <= thresholds.maxPrimaryVisibleButtons && allButtons.length >= 1,
-                  details: `visibleMainHudButtons=${allButtons.length} (cap <= ${
-                    thresholds.maxPrimaryVisibleButtons
-                  }): [${visibleButtonLabels.join(', ')}]`,
-                },
                 {
                   id: 'monochrome_champagne_gold_palette',
                   passed: classViolations.length === 0 && computedColorViolations.length === 0,
                   details: `classViolations=${classViolations.length}, computedColorViolations=${computedColorViolations.length}`,
                 },
               ]
-            : [mutualExclusivityCheck];
+            : [
+                {
+                  id: 'hud_2d_3d_mutual_exclusivity',
+                  passed: visibleSpatialButtonsCount === 4 && hudPanels.length === 0,
+                  details: `mode=3D_SPATIAL_HUD, visible2DPanels=${hudPanels.length} (expected 0), visible3DSpatialButtons=${visibleSpatialButtonsCount} (expected 4)`,
+                },
+              ];
 
           return {
             tier1SpatialAudit,
