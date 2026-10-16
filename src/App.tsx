@@ -149,6 +149,7 @@ export const App: React.FC = () => {
   show2DHUDRef.current = show2DHUD;
   const isInXRRef = useRef(isInXR);
   isInXRRef.current = isInXR;
+  const customDeckQueueRef = useRef<Card[] | null>(null);
 
   const appendChatMessage = useCallback(
     (
@@ -406,7 +407,11 @@ export const App: React.FC = () => {
           : findNextLivingSeat(dealerSeat, basePlayers);
       const bbSeat = findNextLivingSeat(sbSeat, basePlayers);
 
-      const newDeck = createDeck();
+      const customCards = customDeckQueueRef.current;
+      customDeckQueueRef.current = null;
+      const newDeck = customCards
+        ? [...customCards, ...buildRemainingDeck(customCards)]
+        : createDeck();
       let deckIndex = 0;
 
       // Clockwise 2-pass hole card dealing starting from Small Blind (sbSeat)
@@ -2117,8 +2122,8 @@ export const App: React.FC = () => {
     }
     pokerAudio.playChipClink(2);
     pokerAudio.startMusicAndAmbience();
-    pokerAudio.speakDealer('Welcome to the Monte Carlo VIP table. Good luck, players.');
-  }, []);
+    startNewHand(createInitialPlayers(), true);
+  }, [startNewHand]);
 
   const resetCamera = useCallback(() => {
     setCameraPreset('seat0_pov');
@@ -2223,6 +2228,13 @@ export const App: React.FC = () => {
     const dogfoodApi = {
       loadScenario: (id: DogfoodScenarioId) => handleLoadScenario(id),
       setCameraPreset: (preset: CameraPresetId) => handleChangeCameraPreset(preset),
+      rigNextDeck: (cards: Card[] | null) => {
+        customDeckQueueRef.current = cards;
+      },
+      setSpeedMultiplier: (speed: 1 | 2 | 5) => {
+        setSpeedMultiplier(speed);
+        speedMultiplierRef.current = speed;
+      },
       setShow2DHUD: (show: boolean) => {
         show2DHUDRef.current = show;
         setShow2DHUD(show);

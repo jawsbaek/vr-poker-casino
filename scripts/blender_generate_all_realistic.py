@@ -6,6 +6,7 @@ from mathutils import Vector, Matrix, Quaternion
 from mathutils.bvhtree import BVHTree
 
 SCRATCH_DIR = "/Users/User/.gemini/antigravity/brain/b066b21e-03c2-4c92-b3fb-02f35779ebb2/scratch"
+PROJECT_DIR = "/Users/User/Documents/3d poker"
 OUT_DIR = "/Users/User/Documents/3d poker/public/models"
 os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -555,6 +556,21 @@ def import_and_pose_male_outfit(glb_filename, prefix, hand_skin_rgb, pants_rgb, 
     return top_obj, body_obj, bot_obj
 
 
+def fit_hair_outside_scalp(hair_obj, head_obj, clearance=0.0038):
+    """Push any hair vertex that penetrates the cranium/temple scalp outward along the head surface normal."""
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    bvh_head = BVHTree.FromObject(head_obj, depsgraph)
+    for v in hair_obj.data.vertices:
+        if v.co.z < 1.62:
+            continue
+        loc, norm, idx, dist = bvh_head.find_nearest(v.co)
+        if loc and norm:
+            signed_d = (v.co - loc).dot(norm)
+            if signed_d < clearance:
+                v.co = loc + norm * clearance
+    hair_obj.data.update()
+
+
 # ==============================================================================
 # 1. VIKTOR ("The Shark")
 # ==============================================================================
@@ -567,9 +583,10 @@ v_hair = import_hair_mesh("rpm_pulkit.glb", "ViktorHair")
 bpy.context.view_layer.objects.active = v_hair
 sub = v_hair.modifiers.new("Sub", 'SUBSURF'); sub.levels = 1; bpy.ops.object.modifier_apply(modifier="Sub")
 for v in v_hair.data.vertices:
-    v.co.x *= 1.04
+    v.co.x *= 1.05
     v.co.y = v.co.y * 1.04 + 0.006
     v.co.z = (v.co.z - 1.73) * 1.01 + 1.728
+fit_hair_outside_scalp(v_hair, v_head, clearance=0.0038)
 h_col = v_hair.data.color_attributes.new(name="Col", type='BYTE_COLOR', domain='CORNER')
 for poly in v_hair.data.polygons:
     poly.use_smooth = True
@@ -646,10 +663,11 @@ d_hair = import_hair_mesh("rpm_pulkit.glb", "DealerHair")
 bpy.context.view_layer.objects.active = d_hair
 sub = d_hair.modifiers.new("Sub", 'SUBSURF'); sub.levels = 1; bpy.ops.object.modifier_apply(modifier="Sub")
 for v in d_hair.data.vertices:
-    v.co.x = -v.co.x * 1.03
+    v.co.x = -v.co.x * 1.06
     v.co.y = v.co.y * 1.04 + 0.006
-    v.co.z = (v.co.z - 1.73) * 0.99 + 1.725
+    v.co.z = (v.co.z - 1.73) * 1.01 + 1.728
 bm = bmesh.new(); bm.from_mesh(d_hair.data); bmesh.ops.reverse_faces(bm, faces=bm.faces); bm.to_mesh(d_hair.data); bm.free()
+fit_hair_outside_scalp(d_hair, d_head, clearance=0.0042)
 for p in d_hair.data.polygons: p.use_smooth = True
 d_hair.data.materials.clear()
 d_hair.data.materials.append(make_solid_mat("DealerHairMat", (0.04, 0.030, 0.025), roughness=0.40))
@@ -851,7 +869,7 @@ if neck_pts:
     bmesh.ops.create_uvsphere(bm_gn, u_segments=16, v_segments=12, radius=0.0085, matrix=Matrix.Translation(mid_p + Vector((0, -0.003, -0.008))) @ Matrix.Diagonal((0.85, 0.55, 1.25, 1.0)))
 for f in bm_gn.faces:
     c = f.calc_center_median()
-    if 1.42 < c.z < 1.465 and abs(c.x) < 0.015 and c.y < -0.07:
+    if 1.42 < c.z < 1.465 and abs(c.x) > 0.015 and c.y < -0.07:
         f.material_index = 2
 bm_gn.to_mesh(e_gown.data); bm_gn.free()
 
@@ -883,6 +901,7 @@ for v in b_hair.data.vertices:
     v.co.x *= 1.12
     v.co.y = v.co.y * 1.06 + 0.004
     v.co.z = (v.co.z - 1.74) * 1.02 + 1.725
+fit_hair_outside_scalp(b_hair, b_head, clearance=0.0038)
 for p in b_hair.data.polygons: p.use_smooth = True
 b_hair.data.materials.clear()
 b_hair.data.materials.append(make_solid_mat("BaoJetBlackHair", (0.025, 0.028, 0.035), roughness=0.38))
@@ -911,30 +930,17 @@ bm.to_mesh(b_hair.data); bm.free()
 
 def config_bao_top(t_obj):
     base_b_mat = t_obj.data.materials[0]
-    mat_b_sweater = make_island_pbr_mat(base_b_mat, "BaoSweaterEmeraldPBR", (0.045, 0.16, 0.125), ref_lum=0.028, min_factor=0.35)
-    mat_b_collar  = make_island_pbr_mat(base_b_mat, "BaoCollarSlatePBR",    (0.055, 0.070, 0.075), ref_lum=0.72,  min_factor=0.35)
+    mat_b_jacket = make_island_pbr_mat(base_b_mat, "BaoEmeraldJacketPBR", (0.035, 0.145, 0.110), ref_lum=0.48, min_factor=0.30)
+    mat_b_vest   = make_island_pbr_mat(base_b_mat, "BaoSlateVestPBR",     (0.028, 0.065, 0.058), ref_lum=0.35, min_factor=0.30)
+    mat_b_shirt  = make_island_pbr_mat(base_b_mat, "BaoCharcoalShirtPBR", (0.045, 0.052, 0.058), ref_lum=0.70, min_factor=0.30)
+    mat_b_btn    = make_solid_mat("BaoDarkBtn", (0.03, 0.04, 0.04), roughness=0.25)
     t_obj.data.materials.clear()
-    t_obj.data.materials.append(mat_b_sweater)
-    t_obj.data.materials.append(mat_b_collar)
-    bm_b = bmesh.new(); bm_b.from_mesh(t_obj.data)
-    visited = set()
-    for v in bm_b.verts:
-        if v.index in visited: continue
-        comp = []; stack = [v]; visited.add(v.index)
-        while stack:
-            c = stack.pop(); comp.append(c)
-            for e in c.link_edges:
-                o = e.other_vert(c)
-                if o.index not in visited: visited.add(o.index); stack.append(o)
-        n_v = len(comp)
-        m_idx = 0 if n_v in (273, 173, 353, 352, 30) else 1
-        for c in comp:
-            for f in c.link_faces:
-                f.material_index = m_idx
-    bm_b.to_mesh(t_obj.data); bm_b.free()
+    for m in [mat_b_jacket, mat_b_vest, mat_b_shirt, mat_b_btn]:
+        t_obj.data.materials.append(m)
+    assign_wedding_suit_islands(t_obj, 0, 1, 2, 3, delete_bowtie=True, open_collar=True)
 
 b_top, b_hands, b_pants = import_and_pose_male_outfit(
-    "rpm_pulkit.glb", "Bao", (0.79, 0.61, 0.46), (0.05, 0.065, 0.075), scale_xy=1.10, configure_top_fn=config_bao_top
+    "readyplayer.me.glb", "Bao", (0.79, 0.61, 0.46), (0.04, 0.055, 0.065), scale_xy=1.10, configure_top_fn=config_bao_top
 )
 
 
