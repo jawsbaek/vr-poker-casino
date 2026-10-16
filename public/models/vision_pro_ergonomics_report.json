@@ -1,0 +1,36 @@
+{
+  "targetDevice": "Apple Vision Pro (visionOS Safari WebXR + AR QuickLook)",
+  "unitScale": "1.0 unit = 1.0 meter (local-floor reference space)",
+  "seatedEyePositionMeters": {
+    "x": 0.0,
+    "y": 1.42,
+    "z": 1.32
+  },
+  "tableFeltHeightMeters": 0.76,
+  "ergonomicZones": {
+    "bankChipStacks": {
+      "distanceFromEyesMeters": 0.844,
+      "gazePitchDegrees": -51.1,
+      "comfortRating": "Optimal Resting Arm / Gaze-Pinch Zone (< 0.85m)"
+    },
+    "holeCardsPeekZone": {
+      "distanceFromEyesMeters": 0.917,
+      "gazePitchDegrees": -45.8,
+      "comfortRating": "Natural Downward Glance (-45.8 deg) for Secret Corner Peel"
+    },
+    "goldenBettingRing": {
+      "distanceFromEyesMeters": 1.106,
+      "gazePitchDegrees": -36.4,
+      "comfortRating": "Comfortable Forward Chip Toss Target"
+    },
+    "spatialRimControlDock": {
+      "distanceFromEyesMeters": 0.768,
+      "gazePitchDegrees": -53.2,
+      "comfortRating": "Ergonomic Rim Rest for Eye + Pinch Confirmation"
+    }
+  },
+  "assetsExported": [
+    "/models/vip_poker_table.usdz",
+    "/models/vip_poker_table.glb"
+  ]
+}

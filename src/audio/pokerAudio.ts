@@ -1,21 +1,50 @@
-/**
- * Procedural Web Audio Synthesizer for Casino Sounds
- * Zero external audio files/dependencies - 100% synthetically generated
- */
+import { AIPersona, MusicMood } from '../types/poker';
+import { geminiMedia } from '../services/geminiMediaService';
 
+/**
+ * Monte Carlo VIP Casino Audio Engine
+ * Combines:
+ * 1. Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`) for Dealer & AI Persona voices (with Web Speech & formant fallback)
+ * 2. Lyria 3 (`lyria-3-clip-preview`) + Procedural Two-State Soundtrack (`lounge_jazz` <-> `high_stakes`)
+ * 3. Layered VIP Casino Room Ambience (distant crowd murmur, crystal glass clinks, and Bao's tinny phone video leak)
+ * 4. Physical Foley SFX (riffle shuffle, card pitch/slide, chip clinks, check knock, burn tap)
+ */
 class SoundEngine {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
+  private musicGain: GainNode | null = null;
+  private ambienceGain: GainNode | null = null;
+
   public isMuted: boolean = false;
-  private volume: number = 0.6;
+  public isMusicEnabled: boolean = true;
+  public isVoiceEnabled: boolean = true;
+  public currentMood: MusicMood = 'lounge_jazz';
+  public isBaoWatchingPhone: boolean = true;
+
+  private volume: number = 0.65;
+  private musicInterval: number | null = null;
+  private ambienceInterval: number | null = null;
+  private stepCounter: number = 0;
+  private activeLyriaAudio: HTMLAudioElement | null = null;
 
   private initContext() {
     if (!this.ctx) {
-      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new AudioContextClass();
+
       this.masterGain = this.ctx.createGain();
       this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
+
+      this.musicGain = this.ctx.createGain();
+      this.musicGain.gain.setValueAtTime(this.isMusicEnabled ? 0.24 : 0, this.ctx.currentTime);
+      this.musicGain.connect(this.masterGain);
+
+      this.ambienceGain = this.ctx.createGain();
+      this.ambienceGain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+      this.ambienceGain.connect(this.masterGain);
     }
     if (this.ctx.state === 'suspended') {
       this.ctx.resume();
@@ -27,12 +56,445 @@ class SoundEngine {
     if (this.masterGain && this.ctx) {
       this.masterGain.gain.setTargetAtTime(muted ? 0 : this.volume, this.ctx.currentTime, 0.05);
     }
+    if (this.activeLyriaAudio) {
+      this.activeLyriaAudio.muted = muted || !this.isMusicEnabled;
+    }
+    if (muted && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+  }
+
+  public setMusicEnabled(enabled: boolean) {
+    this.isMusicEnabled = enabled;
+    if (this.musicGain && this.ctx) {
+      this.musicGain.gain.setTargetAtTime(enabled ? 0.24 : 0, this.ctx.currentTime, 0.15);
+    }
+    if (this.activeLyriaAudio) {
+      this.activeLyriaAudio.muted = !enabled || this.isMuted;
+    }
+  }
+
+  public setVoiceEnabled(enabled: boolean) {
+    this.isVoiceEnabled = enabled;
+    if (!enabled && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
   }
 
   public setVolume(vol: number) {
     this.volume = Math.max(0, Math.min(1, vol));
     if (this.masterGain && this.ctx && !this.isMuted) {
       this.masterGain.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.05);
+    }
+  }
+
+  /**
+   * Switches between 'lounge_jazz' and 'high_stakes' Lyria/procedural soundtrack states
+   */
+  public setMusicMood(mood: MusicMood) {
+    if (this.currentMood === mood) return;
+    this.currentMood = mood;
+
+    // If Gemini API key is configured, request Lyria 3 clip for the new mood
+    if (geminiMedia.isConfigured() && this.isMusicEnabled && !this.isMuted) {
+      geminiMedia.generateMusicTrack(mood).then((base64Mp3) => {
+        if (base64Mp3 && this.currentMood === mood) {
+          this.playLyriaLoop(base64Mp3);
+        }
+      });
+    }
+  }
+
+  private playLyriaLoop(base64Mp3: string) {
+    try {
+      if (this.activeLyriaAudio) {
+        this.activeLyriaAudio.pause();
+      }
+      const audio = new Audio(`data:audio/mp3;base64,${base64Mp3}`);
+      audio.loop = true;
+      audio.volume = 0.28;
+      audio.muted = this.isMuted || !this.isMusicEnabled;
+      audio.play().catch(() => {});
+      this.activeLyriaAudio = audio;
+    } catch {
+      // Ignore audio element errors
+    }
+  }
+
+  /**
+   * Starts the continuous Monte Carlo Lounge Jazz / High-Stakes pulse + VIP room ambience
+   */
+  public startMusicAndAmbience() {
+    this.initContext();
+    if (this.musicInterval !== null) return;
+
+    // Try loading Lyria 3 track if API key is present
+    if (geminiMedia.isConfigured() && this.isMusicEnabled) {
+      geminiMedia.generateMusicTrack(this.currentMood).then((base64Mp3) => {
+        if (base64Mp3) this.playLyriaLoop(base64Mp3);
+      });
+    }
+
+    // Procedural Lounge Jazz & High-Stakes Tension Sequencer (steps every 420ms)
+    const jazzChords = [
+      [261.63, 329.63, 392.0, 493.88], // Cmaj7
+      [220.0, 261.63, 329.63, 392.0],  // Am7
+      [293.66, 349.23, 440.0, 523.25], // Dm7
+      [196.0, 246.94, 293.66, 349.23], // G7
+    ];
+    const walkingBass = [65.41, 73.42, 82.41, 98.0, 110.0, 98.0, 73.42, 82.41];
+    const tensionBass = [55.0, 55.0, 58.27, 55.0, 65.41, 58.27, 55.0, 49.0];
+
+    this.musicInterval = window.setInterval(() => {
+      if (this.isMuted || !this.isMusicEnabled || !this.ctx || !this.musicGain) return;
+      // If Lyria MP3 is actively playing, keep procedural synth subtle as harmonic reinforcement
+      const scale = this.activeLyriaAudio && !this.activeLyriaAudio.paused ? 0.25 : 1.0;
+
+      const now = this.ctx.currentTime;
+      const step = this.stepCounter++;
+
+      if (this.currentMood === 'lounge_jazz') {
+        // Walking upright bass on even steps
+        if (step % 2 === 0) {
+          const bassFreq = walkingBass[(step / 2) % walkingBass.length];
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(bassFreq, now);
+          gain.gain.setValueAtTime(0.16 * scale, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+          osc.connect(gain);
+          gain.connect(this.musicGain);
+          osc.start(now);
+          osc.stop(now + 0.68);
+        }
+
+        // Warm Rhodes seventh chord pad every 8 steps
+        if (step % 8 === 0) {
+          const chord = jazzChords[Math.floor(step / 8) % jazzChords.length];
+          chord.forEach((freq) => {
+            if (!this.ctx || !this.musicGain) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now);
+            gain.gain.setValueAtTime(0.001, now);
+            gain.gain.linearRampToValueAtTime(0.038 * scale, now + 0.18);
+            gain.gain.exponentialRampToValueAtTime(0.0008, now + 2.8);
+            osc.connect(gain);
+            gain.connect(this.musicGain);
+            osc.start(now);
+            osc.stop(now + 2.9);
+          });
+        }
+
+        // Brushed jazz hi-hat swing
+        if (step % 2 === 1) {
+          this.playBrushHat(0.025 * scale);
+        }
+      } else {
+        // HIGH STAKES MOOD: Tense heartbeat sub-bass pulse + minor suspense
+        const bassFreq = tensionBass[step % tensionBass.length];
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(240, now);
+
+        osc.frequency.setValueAtTime(bassFreq, now);
+        gain.gain.setValueAtTime(0.2 * scale, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.musicGain);
+        osc.start(now);
+        osc.stop(now + 0.35);
+
+        if (step % 4 === 0) {
+          // Suspenseful high string/pad harmonic
+          const padOsc = this.ctx.createOscillator();
+          const padGain = this.ctx.createGain();
+          padOsc.type = 'sine';
+          padOsc.frequency.setValueAtTime(step % 8 === 0 ? 440 : 466.16, now); // A4 / Bb4 tension
+          padGain.gain.setValueAtTime(0.001, now);
+          padGain.gain.linearRampToValueAtTime(0.045 * scale, now + 0.15);
+          padGain.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
+          padOsc.connect(padGain);
+          padGain.connect(this.musicGain);
+          padOsc.start(now);
+          padOsc.stop(now + 1.45);
+        }
+      }
+    }, 420);
+
+    // Layered VIP Room Ambience (distant glass clinks, soft murmur, and Bao's phone audio leak)
+    this.ambienceInterval = window.setInterval(() => {
+      if (this.isMuted || !this.ctx || !this.ambienceGain) return;
+      const roll = Math.random();
+      if (roll < 0.35) {
+        this.playDistantGlassClink();
+      } else if (roll < 0.72 && this.isBaoWatchingPhone) {
+        this.playPhoneReelLeak();
+      }
+    }, 3400);
+  }
+
+  private playBrushHat(vol: number) {
+    if (!this.ctx || !this.musicGain) return;
+    const dur = 0.06;
+    const len = Math.floor(this.ctx.sampleRate * dur);
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (len * 0.35));
+    }
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const hp = this.ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.setValueAtTime(5500, this.ctx.currentTime);
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+    src.connect(hp);
+    hp.connect(gain);
+    gain.connect(this.musicGain);
+    src.start();
+  }
+
+  /**
+   * Distant crystal whiskey/champagne glass clink in the Monte Carlo VIP lounge
+   */
+  public playDistantGlassClink() {
+    if (this.isMuted || !this.ctx || !this.ambienceGain) return;
+    const now = this.ctx.currentTime;
+    const base = 3100 + Math.random() * 600;
+    [base, base * 1.48].forEach((freq, i) => {
+      if (!this.ctx || !this.ambienceGain) return;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + i * 0.04);
+      gain.gain.setValueAtTime(0.045, now + i * 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.0005, now + i * 0.04 + 0.32);
+      osc.connect(gain);
+      gain.connect(this.ambienceGain);
+      osc.start(now + i * 0.04);
+      osc.stop(now + i * 0.04 + 0.35);
+    });
+  }
+
+  /**
+   * Faint, tinny high-passed smartphone video/reel sound leaking from Seat #3 (Bao's phone)
+   */
+  public playPhoneReelLeak() {
+    if (this.isMuted) return;
+    try {
+      this.initContext();
+      if (!this.ctx || !this.ambienceGain) return;
+      const now = this.ctx.currentTime;
+
+      // Tiny high-passed melodic/chirp snippet like a sped-up mobile short video
+      const notes = [1480, 1760, 1975, 1567];
+      notes.forEach((f, idx) => {
+        if (!this.ctx || !this.ambienceGain) return;
+        const osc = this.ctx.createOscillator();
+        const hp = this.ctx.createBiquadFilter();
+        const gain = this.ctx.createGain();
+
+        hp.type = 'bandpass';
+        hp.frequency.setValueAtTime(2400, now);
+        hp.Q.setValueAtTime(4.5, now); // Tinny phone speaker EQ
+
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(f + (Math.random() - 0.5) * 80, now + idx * 0.065);
+
+        gain.gain.setValueAtTime(0.022, now + idx * 0.065);
+        gain.gain.exponentialRampToValueAtTime(0.0005, now + idx * 0.065 + 0.055);
+
+        osc.connect(hp);
+        hp.connect(gain);
+        gain.connect(this.ambienceGain);
+
+        osc.start(now + idx * 0.065);
+        osc.stop(now + idx * 0.065 + 0.06);
+      });
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Dealer riffle shuffle + bridge cascade on new hand
+   */
+  public playRiffleShuffle() {
+    if (this.isMuted) return;
+    try {
+      this.initContext();
+      if (!this.ctx || !this.masterGain) return;
+      const now = this.ctx.currentTime;
+      const flutterCount = 14;
+      for (let i = 0; i < flutterCount; i++) {
+        const offset = i * 0.022 + Math.random() * 0.006;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(520 + i * 28, now + offset);
+        osc.frequency.exponentialRampToValueAtTime(140, now + offset + 0.024);
+
+        gain.gain.setValueAtTime(0.11, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.025);
+
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start(now + offset);
+        osc.stop(now + offset + 0.028);
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Dealer burn-card table tap before dealing Flop / Turn / River
+   */
+  public playBurnTap() {
+    if (this.isMuted) return;
+    try {
+      this.initContext();
+      if (!this.ctx || !this.masterGain) return;
+      const now = this.ctx.currentTime;
+      [0, 0.085].forEach((offset) => {
+        if (!this.ctx || !this.masterGain) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(190, now + offset);
+        osc.frequency.exponentialRampToValueAtTime(75, now + offset + 0.05);
+        gain.gain.setValueAtTime(0.22, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.055);
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start(now + offset);
+        osc.stop(now + offset + 0.06);
+      });
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Speaks a Dealer announcement using Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)
+   * with automatic fallback to Web Speech synthesis.
+   */
+  public async speakDealer(text: string) {
+    if (this.isMuted || !this.isVoiceEnabled) return;
+
+    if (geminiMedia.isConfigured()) {
+      const base64Wav = await geminiMedia.synthesizeSpeech(
+        text,
+        'Aoede',
+        'composed, welcoming, authoritative Monte Carlo VIP casino dealer'
+      );
+      if (base64Wav) {
+        this.playBase64Audio(base64Wav, 'audio/wav');
+        return;
+      }
+    }
+
+    this.speakWebFallback(text, 1.02, 1.0);
+  }
+
+  /**
+   * Speaks an AI Player chit-chat line using Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)
+   * with persona-matched voice & style, falling back to persona-tuned Web Speech synthesis.
+   */
+  public async speakPlayer(
+    text: string,
+    persona: AIPersona,
+    voiceName?: string,
+    voiceStyle?: string
+  ) {
+    if (this.isMuted || !this.isVoiceEnabled) return;
+
+    if (geminiMedia.isConfigured()) {
+      const base64Wav = await geminiMedia.synthesizeSpeech(
+        text,
+        voiceName || 'Charon',
+        voiceStyle || 'confident poker player'
+      );
+      if (base64Wav) {
+        this.playBase64Audio(base64Wav, 'audio/wav');
+        return;
+      }
+    }
+
+    // Persona-specific pitch & rate fallback
+    let pitch = 1.0;
+    let rate = 1.0;
+    switch (persona) {
+      case 'general_man': // Viktor (Shark)
+        pitch = 0.84;
+        rate = 0.95;
+        break;
+      case 'woman': // Elena (Rock)
+        pitch = 1.24;
+        rate = 0.98;
+        break;
+      case 'heavy_phone': // Bao (Station)
+        pitch = 0.91;
+        rate = 0.96;
+        break;
+      case 'flashy_maniac': // Marcus (Maniac)
+        pitch = 1.08;
+        rate = 1.14;
+        break;
+    }
+    this.speakWebFallback(text, pitch, rate);
+  }
+
+  private playBase64Audio(base64Data: string, mimeType: string) {
+    try {
+      const audio = new Audio(`data:${mimeType};base64,${base64Data}`);
+      audio.volume = Math.min(1, this.volume * 1.15);
+      audio.play().catch(() => {});
+    } catch {
+      // Ignore
+    }
+  }
+
+  private speakWebFallback(text: string, pitch: number, rate: number) {
+    try {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        // Avoid overlapping a long queue
+        if (window.speechSynthesis.speaking) {
+          window.speechSynthesis.cancel();
+        }
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.pitch = pitch;
+        utter.rate = rate;
+        utter.volume = Math.min(1, this.volume);
+
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          if (pitch > 1.15) {
+            const female = voices.find((v) =>
+              /samantha|victoria|karen|moira|fiona|female|zira/i.test(v.name)
+            );
+            if (female) utter.voice = female;
+          } else if (pitch < 0.9) {
+            const male = voices.find((v) =>
+              /daniel|alex|fred|tom|oliver|david|male/i.test(v.name)
+            );
+            if (male) utter.voice = male;
+          }
+        }
+        window.speechSynthesis.speak(utter);
+      }
+    } catch {
+      // Ignore speech synthesis errors
     }
   }
 
@@ -121,8 +583,11 @@ class SoundEngine {
       for (let i = 0; i < numClicks; i++) {
         const offset = i * (0.03 + Math.random() * 0.02);
 
-        // Clay body resonance (sine cluster)
-        const freqs = [2800 + Math.random() * 300, 3600 + Math.random() * 400, 5200 + Math.random() * 500];
+        const freqs = [
+          2800 + Math.random() * 300,
+          3600 + Math.random() * 400,
+          5200 + Math.random() * 500,
+        ];
 
         freqs.forEach((freq) => {
           if (!this.ctx || !this.masterGain) return;
@@ -157,7 +622,6 @@ class SoundEngine {
       if (!this.ctx || !this.masterGain) return;
 
       const now = this.ctx.currentTime;
-      // Double tap knock
       [0, 0.12].forEach((offset) => {
         if (!this.ctx || !this.masterGain) return;
         const osc = this.ctx.createOscillator();
@@ -213,6 +677,77 @@ class SoundEngine {
 
         osc.start(noteStart);
         osc.stop(noteStart + noteDuration);
+      });
+    } catch {
+      // Audio fallback
+    }
+  }
+
+  /**
+   * Soft friction sweep when sliding a stack of chips across the emerald felt
+   */
+  public playChipSlide() {
+    if (this.isMuted) return;
+    try {
+      this.initContext();
+      if (!this.ctx || !this.masterGain) return;
+
+      const duration = 0.22;
+      const bufferSize = Math.floor(this.ctx.sampleRate * duration);
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+
+      for (let i = 0; i < bufferSize; i++) {
+        const env = Math.sin((i / bufferSize) * Math.PI);
+        data[i] = (Math.random() * 2 - 1) * env * 0.5;
+      }
+
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(650, this.ctx.currentTime);
+      filter.frequency.linearRampToValueAtTime(1100, this.ctx.currentTime + duration);
+      filter.Q.setValueAtTime(1.8, this.ctx.currentTime);
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain);
+
+      noise.start();
+      this.playChipClink(2);
+    } catch {
+      // Audio fallback
+    }
+  }
+
+  /**
+   * Subtle luxury brass chime when tournament blind level increases
+   */
+  public playBlindUp() {
+    if (this.isMuted) return;
+    try {
+      this.initContext();
+      if (!this.ctx || !this.masterGain) return;
+
+      const now = this.ctx.currentTime;
+      [440, 659.25].forEach((freq, idx) => {
+        if (!this.ctx || !this.masterGain) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.14);
+        gain.gain.setValueAtTime(0.15, now + idx * 0.14);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.14 + 0.55);
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start(now + idx * 0.14);
+        osc.stop(now + idx * 0.14 + 0.56);
       });
     } catch {
       // Audio fallback

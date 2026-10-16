@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google/genai": "^2.30.0",
     "canvas-confetti": "^1.9.3",
     "clsx": "^2.1.1",
     "lucide-react": "^0.453.0",
