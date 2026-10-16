@@ -9,6 +9,7 @@
     "preview": "vite preview --host 0.0.0.0 --port 3000",
     "dogfood": "node scripts/dogfood_visual_loop.mjs",
     "verify:ux": "node scripts/verify_ux_guideline_harness.mjs",
+    "verify:hud": "node scripts/verify_poker_hud.mjs",
     "blender:generate": "/Applications/Blender.app/Contents/MacOS/Blender -b -P scripts/blender_generate_vip_assets.py",
     "blender:dealer": "/Applications/Blender.app/Contents/MacOS/Blender -b -P scripts/blender_generate_dealer.py",
     "blender:ai-players": "/Applications/Blender.app/Contents/MacOS/Blender -b -P scripts/blender_generate_ai_players.py",

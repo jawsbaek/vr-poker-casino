@@ -180,7 +180,7 @@ def paint_head_skin(head_obj, base_rgb, lip_rgb, brow_rgb, lip_z, lip_y, brow_z_
             vi = head_obj.data.loops[li].vertex_index
             co = head_obj.data.vertices[vi].co
             if is_nail:
-                color_attr.data[li].color = (nail_rgb[0], nail_rgb[1], nail_rgb[2], 1.0)
+                color_attr.data[li].color = (nail_rgb[0]**2.2, nail_rgb[1]**2.2, nail_rgb[2]**2.2, 1.0)
                 continue
             r, g, b = base_rgb
             if co.z > 1.45:
@@ -240,7 +240,7 @@ def paint_head_skin(head_obj, base_rgb, lip_rgb, brow_rgb, lip_z, lip_y, brow_z_
                     if beard_strength > 0.5 and w_total > 0.05:
                         vert_relief[vi] = 0.0014 * w_total * strand
 
-            color_attr.data[li].color = (r, g, b, 1.0)
+            color_attr.data[li].color = (r**2.2, g**2.2, b**2.2, 1.0)
 
     if vert_relief:
         for vi, disp in vert_relief.items():
@@ -291,15 +291,22 @@ def clone_and_recolor_pbr_mat(src_mat, new_name, pixel_transform_fn):
     m.name = new_name
     for n in m.node_tree.nodes:
         if n.type == 'TEX_IMAGE' and n.image and ("top-D" in n.image.name or "bottom-D" in n.image.name):
-            new_img = n.image.copy()
-            new_img.name = f"{new_name}_D"
-            px = list(new_img.pixels)
+            w, h = n.image.size
+            px = list(n.image.pixels)
             for i in range(0, len(px), 4):
                 r, g, b, a = px[i], px[i+1], px[i+2], px[i+3]
                 nr, ng, nb = pixel_transform_fn(r, g, b)
                 px[i], px[i+1], px[i+2] = nr, ng, nb
+            new_img = bpy.data.images.new(name=f"{new_name}_D", width=w, height=h, alpha=True)
             new_img.pixels[:] = px
             new_img.update()
+            tmp_dir = os.path.join(PROJECT_DIR, "public", "assets", "pbr")
+            os.makedirs(tmp_dir, exist_ok=True)
+            tmp_path = os.path.join(tmp_dir, f"{new_name}_D.png")
+            new_img.filepath_raw = tmp_path
+            new_img.file_format = 'PNG'
+            new_img.save()
+            new_img.pack()
             n.image = new_img
     return m
 
@@ -535,7 +542,11 @@ def import_and_pose_male_outfit(glb_filename, prefix, hand_skin_rgb, pants_rgb, 
     else:
         bot_obj.data.materials.append(make_solid_mat(f"{prefix}PantsMat", pants_rgb, roughness=0.48))
 
-    h_mat = make_solid_mat(f"{prefix}HandSkinMat", hand_skin_rgb, roughness=0.42)
+    h_mat = make_solid_mat(
+        f"{prefix}HandSkinMat",
+        (hand_skin_rgb[0]**2.2, hand_skin_rgb[1]**2.2, hand_skin_rgb[2]**2.2),
+        roughness=0.42,
+    )
     if "Subsurface Weight" in h_mat.node_tree.nodes["Principled BSDF"].inputs:
         h_mat.node_tree.nodes["Principled BSDF"].inputs["Subsurface Weight"].default_value = 0.14
     body_obj.data.materials.clear()
@@ -1184,19 +1195,6 @@ def split_male_character_into_4_parts(prefix, head_obj, eye_l, eye_r, hair_obj, 
     top_l_arm = extract_poly_subset(top_obj, lambda i, f: poly_sides[i] == "LEFT_ARM", f"{prefix}_TopLArm")
     top_r_arm = extract_poly_subset(top_obj, lambda i, f: poly_sides[i] == "RIGHT_ARM", f"{prefix}_TopRArm")
     bpy.data.objects.remove(top_obj, do_unlink=True)
-
-    # Add inset spherical shoulder socket caps on LeftArm & RightArm so arm rotations never expose a gap
-    for arm_mesh, p_arm in [(top_l_arm, p_left_arm), (top_r_arm, p_right_arm)]:
-        bm_cap = bmesh.new()
-        bm_cap.from_mesh(arm_mesh.data)
-        bmesh.ops.create_uvsphere(bm_cap, u_segments=16, v_segments=12, radius=0.044, matrix=Matrix.Translation(p_arm + Vector((0, 0.035, 0.055))))
-        for f in bm_cap.faces:
-            if (f.calc_center_median() - (p_arm + Vector((0, 0.035, 0.055)))).length < 0.05:
-                f.material_index = 0
-        bm_cap.to_mesh(arm_mesh.data)
-        bm_cap.free()
-        for p in arm_mesh.data.polygons:
-            p.use_smooth = True
 
     # Partition hands_obj into LeftArm (x < 0) and RightArm (x >= 0)
     hands_l = extract_poly_subset(hands_obj, lambda i, f: f.calc_center_median().x < 0.0, f"{prefix}_HandsL")

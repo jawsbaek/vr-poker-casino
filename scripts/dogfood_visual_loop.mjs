@@ -183,27 +183,36 @@ async function runDogfoodLoop() {
       // Let parabolic card-pitch / chip-toss animations settle for crisp inspection
       await page.waitForTimeout(850);
 
-      const audit = await page.evaluate(() => window.__POKER_DOGFOOD__.runSpatialAudit());
+      const { audit, hudUiAudit } = await page.evaluate(() => ({
+        audit: window.__POKER_DOGFOOD__.runSpatialAudit(),
+        hudUiAudit: window.__POKER_DOGFOOD__.runHudUiAudit(),
+      }));
       auditResults.push({
         capture: item.filename,
         scenario: item.scenario,
         preset: item.preset,
+        show2DHUD: item.show2DHUD,
         audit,
+        hudUiAudit,
       });
 
       const shotPath = path.join(OUT_DIR, item.filename);
       await page.screenshot({ path: shotPath });
       console.log(
-        `📸 Captured: ${item.filename} | Audit allPassed=${audit?.allPassed} | DrawCalls=${audit?.drawCalls} | Triangles=${audit?.triangles}`
+        `📸 Captured: ${item.filename} | Spatial=${audit?.allPassed} | HUD/UI=${hudUiAudit?.allPassed} (Cov=${hudUiAudit?.hudViewportCoveragePct?.toFixed(1)}%, Ctrls=${hudUiAudit?.visibleInteractiveCount}) | DrawCalls=${audit?.drawCalls}`
       );
 
       if (!audit || !audit.allPassed) {
         const failed = audit?.checks?.filter((c) => !c.passed) || [];
         console.error(`❌ Spatial Audit Failed on ${item.filename}:`, failed);
       }
+      if (!hudUiAudit || !hudUiAudit.allPassed) {
+        const failedHud = hudUiAudit?.checks?.filter((c) => !c.passed) || [];
+        console.error(`❌ HUD/UI Rules Audit Failed on ${item.filename}:`, failedHud);
+      }
     }
 
-    // 2. Open the in-app "3D Visual & Dogfood Inspector" drawer and capture it
+    // 1b. Verify Active Hero Turn Composite 2D+3D HUD (HUD-R1 through HUD-R6 during active betting turn)
     await page.evaluate(() => {
       const api = window.__POKER_DOGFOOD__;
       api.loadScenario('bao_phone_down_monster');
@@ -211,14 +220,41 @@ async function runDogfoodLoop() {
       api.setShow2DHUD(true);
       api.setDebugOverlay(false);
     });
-    await page.waitForTimeout(500);
-    const inspectorBtn = page.locator('[data-testid="hud-menu-trigger"]');
+    await page.waitForTimeout(600);
+    const activeTurnChecks = await page.evaluate(() => ({
+      audit: window.__POKER_DOGFOOD__.runSpatialAudit(),
+      hudUiAudit: window.__POKER_DOGFOOD__.runHudUiAudit(),
+    }));
+    auditResults.push({
+      capture: 'active_turn_composite_2d_3d_check',
+      scenario: 'bao_phone_down_monster',
+      preset: 'seat0_pov',
+      show2DHUD: true,
+      audit: activeTurnChecks.audit,
+      hudUiAudit: activeTurnChecks.hudUiAudit,
+    });
+    console.log(
+      `🎯 Active Hero Turn Composite 2D+3D Check | Spatial=${activeTurnChecks.audit?.allPassed} | HUD/UI=${activeTurnChecks.hudUiAudit?.allPassed} (Cov=${activeTurnChecks.hudUiAudit?.hudViewportCoveragePct?.toFixed(1)}%, Ctrls=${activeTurnChecks.hudUiAudit?.visibleInteractiveCount})`
+    );
+    if (!activeTurnChecks.hudUiAudit?.allPassed) {
+      const failedHud = activeTurnChecks.hudUiAudit?.checks?.filter((c) => !c.passed) || [];
+      console.error(`❌ Active Turn HUD/UI Rules Audit Failed:`, failedHud);
+    }
+
+    // 2. Open the in-app "HUD/UI Rules & 3D Dogfood Inspector" drawer and capture it
+    const inspectorBtn = page.locator('[data-testid="hud-inspector-trigger"]');
     if ((await inspectorBtn.count()) > 0) {
       await inspectorBtn.click();
       await page.waitForTimeout(450);
+      const inspectorDrawerAudit = await page.evaluate(() => window.__POKER_DOGFOOD__.runHudUiAudit());
       const inspectorShotPath = path.join(OUT_DIR, '10_in_app_3d_dogfood_inspector_drawer.png');
       await page.screenshot({ path: inspectorShotPath });
-      console.log(`📸 Captured: ${path.basename(inspectorShotPath)}`);
+      console.log(
+        `📸 Captured: ${path.basename(inspectorShotPath)} | Inspector Drawer HUD/UI=${inspectorDrawerAudit?.allPassed} (OpenDrawers=${inspectorDrawerAudit?.openDrawerCount})`
+      );
+      // Close inspector drawer before auto-pilot
+      await inspectorBtn.click();
+      await page.waitForTimeout(250);
     }
 
     // 3. Exercise the Auto-Pilot Bot at 5x speed for live autonomous gameplay dogfooding
@@ -235,11 +271,12 @@ async function runDogfoodLoop() {
       api.setAutoPilot(false, 1);
       return {
         audit: api.runSpatialAudit(),
+        hudUiAudit: api.runHudUiAudit(),
         state: api.getState(),
       };
     });
     console.log(
-      `✅ Auto-Pilot Bot completed | Current Phase=${postBotAudit.state.table.phase} | Pot=$${postBotAudit.state.table.pot} | Audit allPassed=${postBotAudit.audit?.allPassed}`
+      `✅ Auto-Pilot Bot completed | Current Phase=${postBotAudit.state.table.phase} | Pot=$${postBotAudit.state.table.pot} | Spatial=${postBotAudit.audit?.allPassed} | HUD/UI=${postBotAudit.hudUiAudit?.allPassed}`
     );
 
     const summaryReport = {
@@ -247,6 +284,8 @@ async function runDogfoodLoop() {
       totalCaptures: CAPTURE_MATRIX.length + 2,
       allSpatialAuditsPassed:
         auditResults.every((r) => r.audit?.allPassed) && !!postBotAudit.audit?.allPassed,
+      allHudUiAuditsPassed:
+        auditResults.every((r) => r.hudUiAudit?.allPassed) && !!postBotAudit.hudUiAudit?.allPassed,
       pageErrors,
       consoleErrors,
       postBotPhase: postBotAudit.state.table.phase,
@@ -257,7 +296,7 @@ async function runDogfoodLoop() {
     fs.writeFileSync(reportPath, JSON.stringify(summaryReport, null, 2), 'utf-8');
     console.log(`📄 Saved full audit report to ${reportPath}`);
 
-    if (!summaryReport.allSpatialAuditsPassed || pageErrors.length > 0) {
+    if (!summaryReport.allSpatialAuditsPassed || !summaryReport.allHudUiAuditsPassed || pageErrors.length > 0) {
       process.exitCode = 1;
     }
   } finally {

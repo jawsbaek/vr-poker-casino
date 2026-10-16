@@ -406,29 +406,90 @@ class SoundEngine {
   }
 
   /**
-   * Speaks a Dealer announcement using Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)
+   * Clears pending voice lines and optionally stops active playback (e.g., on new hand or mute)
+   */
+  public clearVoiceQueue(cancelActive: boolean = true) {
+    this.voiceQueue = [];
+    if (cancelActive) {
+      this.voiceGenerationId++;
+      if (this.activeVoiceAudio) {
+        try {
+          this.activeVoiceAudio.pause();
+          this.activeVoiceAudio.src = '';
+        } catch {
+          // Ignore
+        }
+        this.activeVoiceAudio = null;
+      }
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch {
+          // Ignore
+        }
+      }
+      this.isVoicePlaying = false;
+      this.updateMusicDucking();
+      this.flushVoiceIdleResolvers();
+    }
+  }
+
+  private flushVoiceIdleResolvers() {
+    if (this.voiceIdleResolvers.length === 0) return;
+    const resolvers = [...this.voiceIdleResolvers];
+    this.voiceIdleResolvers = [];
+    resolvers.forEach((resolve) => resolve());
+  }
+
+  /**
+   * Returns true if a voice clip is currently speaking or waiting in the queue
+   */
+  public isSpeakingOrQueued(): boolean {
+    return this.isVoicePlaying || this.voiceQueue.length > 0;
+  }
+
+  /**
+   * Resolves once the active voice and any queued utterances finish playing
+   */
+  public waitForVoiceIdle(maxWaitMs: number = 4200): Promise<void> {
+    if (this.isMuted || !this.isVoiceEnabled || !this.isSpeakingOrQueued()) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        resolve();
+      };
+      const timer = window.setTimeout(done, maxWaitMs);
+      this.voiceIdleResolvers.push(done);
+    });
+  }
+
+  /**
+   * Enqueues a Dealer announcement using Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)
    * with automatic fallback to Web Speech synthesis.
+   * Drops stale pending AI banter if the queue is backed up so Dealer callouts stay synchronized.
    */
   public async speakDealer(text: string) {
     if (this.isMuted || !this.isVoiceEnabled) return;
 
-    if (geminiMedia.isConfigured()) {
-      const base64Wav = await geminiMedia.synthesizeSpeech(
-        text,
-        'Aoede',
-        'composed, welcoming, authoritative Monte Carlo VIP casino dealer'
-      );
-      if (base64Wav) {
-        this.playBase64Audio(base64Wav, 'audio/wav');
-        return;
-      }
+    // Keep at most 1 pending item before a Dealer announcement; drop stale queued AI banter
+    if (this.voiceQueue.length > 0) {
+      this.voiceQueue = this.voiceQueue.filter((item) => item.role === 'dealer').slice(-1);
     }
 
-    this.speakWebFallback(text, 1.02, 1.0);
+    this.voiceQueue.push({
+      text,
+      role: 'dealer',
+    });
+    this.processVoiceQueue();
   }
 
   /**
-   * Speaks an AI Player chit-chat line using Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)
+   * Enqueues an AI Player chit-chat line using Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)
    * with persona-matched voice & style, falling back to persona-tuned Web Speech synthesis.
    */
   public async speakPlayer(
@@ -439,22 +500,95 @@ class SoundEngine {
   ) {
     if (this.isMuted || !this.isVoiceEnabled) return;
 
+    // Prevent AI banter backlog: replace any unplayed player banter in the queue
+    this.voiceQueue = this.voiceQueue.filter((item) => item.role === 'dealer');
+    if (this.voiceQueue.length >= 2) return;
+
+    this.voiceQueue.push({
+      text,
+      role: 'player',
+      persona,
+      voiceName,
+      voiceStyle,
+    });
+    this.processVoiceQueue();
+  }
+
+  private async processVoiceQueue() {
+    if (this.isVoicePlaying) return;
+    if (this.isMuted || !this.isVoiceEnabled || this.voiceQueue.length === 0) {
+      this.flushVoiceIdleResolvers();
+      return;
+    }
+
+    this.isVoicePlaying = true;
+    this.updateMusicDucking();
+    const genId = this.voiceGenerationId;
+
+    while (this.voiceQueue.length > 0 && genId === this.voiceGenerationId) {
+      if (this.isMuted || !this.isVoiceEnabled) break;
+
+      const item = this.voiceQueue.shift()!;
+      await this.playSingleVoiceItem(item, genId);
+
+      // Brief natural breathing pause between consecutive queued utterances
+      if (this.voiceQueue.length > 0 && genId === this.voiceGenerationId) {
+        await new Promise<void>((r) => window.setTimeout(r, 150));
+      }
+    }
+
+    if (genId === this.voiceGenerationId) {
+      this.isVoicePlaying = false;
+      this.updateMusicDucking();
+      this.flushVoiceIdleResolvers();
+    }
+  }
+
+  private async playSingleVoiceItem(
+    item: {
+      text: string;
+      role: 'dealer' | 'player';
+      persona?: AIPersona;
+      voiceName?: string;
+      voiceStyle?: string;
+    },
+    genId: number
+  ): Promise<void> {
     if (geminiMedia.isConfigured()) {
+      const targetVoice =
+        item.role === 'dealer' ? 'Aoede' : item.voiceName || 'Charon';
+      const targetStyle =
+        item.role === 'dealer'
+          ? 'composed, welcoming, authoritative Monte Carlo VIP casino dealer'
+          : item.voiceStyle || 'confident poker player';
+
       const base64Wav = await geminiMedia.synthesizeSpeech(
-        text,
-        voiceName || 'Charon',
-        voiceStyle || 'confident poker player'
+        item.text,
+        targetVoice,
+        targetStyle
       );
-      if (base64Wav) {
-        this.playBase64Audio(base64Wav, 'audio/wav');
+      if (genId !== this.voiceGenerationId || this.isMuted || !this.isVoiceEnabled) {
         return;
       }
+      if (base64Wav) {
+        await this.playBase64AudioPromise(base64Wav, 'audio/wav', item.text);
+        return;
+      }
+    }
+
+    if (genId !== this.voiceGenerationId || this.isMuted || !this.isVoiceEnabled) {
+      return;
+    }
+
+    if (item.role === 'dealer') {
+      await this.speakWebFallbackPromise(item.text, 1.02, 1.0);
+      return;
     }
 
     // Persona-specific pitch & rate fallback
     let pitch = 1.0;
     let rate = 1.0;
-    switch (persona) {
+    switch (item.persona) {
       case 'general_man': // Viktor (Shark)
         pitch = 0.84;
         rate = 0.95;
@@ -472,50 +606,92 @@ class SoundEngine {
         rate = 1.14;
         break;
     }
-    this.speakWebFallback(text, pitch, rate);
+    await this.speakWebFallbackPromise(item.text, pitch, rate);
   }
 
-  private playBase64Audio(base64Data: string, mimeType: string) {
-    try {
-      const audio = new Audio(`data:${mimeType};base64,${base64Data}`);
-      audio.volume = Math.min(1, this.volume * 1.15);
-      audio.play().catch(() => {});
-    } catch {
-      // Ignore
-    }
+  private estimateSpeechDurationMs(text: string, rate: number = 1.0): number {
+    const wordCount = Math.max(1, text.trim().split(/\s+/).length);
+    return Math.min(4600, Math.max(1100, Math.round((wordCount * 340) / Math.max(0.75, rate)) + 350));
   }
 
-  private speakWebFallback(text: string, pitch: number, rate: number) {
-    try {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        // Avoid overlapping a long queue
-        if (window.speechSynthesis.speaking) {
-          window.speechSynthesis.cancel();
+  private playBase64AudioPromise(
+    base64Data: string,
+    mimeType: string,
+    textForFallbackDuration: string
+  ): Promise<void> {
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(fallbackTimer);
+        if (this.activeVoiceAudio === audio) {
+          this.activeVoiceAudio = null;
         }
-        const utter = new SpeechSynthesisUtterance(text);
-        utter.pitch = pitch;
-        utter.rate = rate;
-        utter.volume = Math.min(1, this.volume);
+        resolve();
+      };
 
-        const voices = window.speechSynthesis.getVoices();
-        if (voices.length > 0) {
-          if (pitch > 1.15) {
-            const female = voices.find((v) =>
-              /samantha|victoria|karen|moira|fiona|female|zira/i.test(v.name)
-            );
-            if (female) utter.voice = female;
-          } else if (pitch < 0.9) {
-            const male = voices.find((v) =>
-              /daniel|alex|fred|tom|oliver|david|male/i.test(v.name)
-            );
-            if (male) utter.voice = male;
-          }
-        }
-        window.speechSynthesis.speak(utter);
+      const maxMs = this.estimateSpeechDurationMs(textForFallbackDuration, 1.0) + 800;
+      const fallbackTimer = window.setTimeout(finish, maxMs);
+
+      let audio: HTMLAudioElement | null = null;
+      try {
+        audio = new Audio(`data:${mimeType};base64,${base64Data}`);
+        this.activeVoiceAudio = audio;
+        audio.volume = Math.min(1, this.volume * 1.15);
+        audio.onended = finish;
+        audio.onerror = finish;
+        audio.play().catch(finish);
+      } catch {
+        finish();
       }
-    } catch {
-      // Ignore speech synthesis errors
-    }
+    });
+  }
+
+  private speakWebFallbackPromise(text: string, pitch: number, rate: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const estimatedMs = this.estimateSpeechDurationMs(text, rate);
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(safetyTimer);
+        resolve();
+      };
+
+      const safetyTimer = window.setTimeout(finish, estimatedMs);
+
+      try {
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+          const utter = new SpeechSynthesisUtterance(text);
+          utter.pitch = pitch;
+          utter.rate = rate;
+          utter.volume = Math.min(1, this.volume);
+
+          const voices = window.speechSynthesis.getVoices();
+          if (voices.length > 0) {
+            if (pitch > 1.15) {
+              const female = voices.find((v) =>
+                /samantha|victoria|karen|moira|fiona|female|zira/i.test(v.name)
+              );
+              if (female) utter.voice = female;
+            } else if (pitch < 0.9) {
+              const male = voices.find((v) =>
+                /daniel|alex|fred|tom|oliver|david|male/i.test(v.name)
+              );
+              if (male) utter.voice = male;
+            }
+          }
+          utter.onend = finish;
+          utter.onerror = finish;
+          window.speechSynthesis.speak(utter);
+        } else {
+          finish();
+        }
+      } catch {
+        finish();
+      }
+    });
   }
 
   /**

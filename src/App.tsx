@@ -26,6 +26,7 @@ import {
 } from './types/poker';
 import {
   createDeck,
+  buildRemainingDeck,
   createInitialPlayers,
   evaluate7CardHand,
   getAIDecision,
@@ -66,6 +67,8 @@ export const App: React.FC = () => {
   const aiTimeoutRef = useRef<number | null>(null);
   const runoutTimeoutRef = useRef<number | null>(null);
   const autoPilotTimeoutRef = useRef<number | null>(null);
+  const phaseTransitionTimeoutRef = useRef<number | null>(null);
+  const turnGenerationRef = useRef<number>(0);
 
   const [isTitleMode, setIsTitleMode] = useState(true);
   const [players, setPlayers] = useState<PlayerState[]>(createInitialPlayers);
@@ -172,6 +175,7 @@ export const App: React.FC = () => {
   );
 
   const clearTimers = () => {
+    turnGenerationRef.current += 1;
     if (aiTimeoutRef.current !== null) {
       window.clearTimeout(aiTimeoutRef.current);
       aiTimeoutRef.current = null;
@@ -183,6 +187,10 @@ export const App: React.FC = () => {
     if (autoPilotTimeoutRef.current !== null) {
       window.clearTimeout(autoPilotTimeoutRef.current);
       autoPilotTimeoutRef.current = null;
+    }
+    if (phaseTransitionTimeoutRef.current !== null) {
+      window.clearTimeout(phaseTransitionTimeoutRef.current);
+      phaseTransitionTimeoutRef.current = null;
     }
   };
 
@@ -367,6 +375,7 @@ export const App: React.FC = () => {
   const startNewHand = useCallback(
     (overridePlayers?: PlayerState[], resetTournament: boolean = false) => {
       clearTimers();
+      pokerAudio.clearVoiceQueue(true);
       if (sceneRef.current) {
         sceneRef.current.clearCards();
         sceneRef.current.triggerDealerAction('riffle_shuffle');
@@ -396,10 +405,39 @@ export const App: React.FC = () => {
           ? dealerSeat
           : findNextLivingSeat(dealerSeat, basePlayers);
       const bbSeat = findNextLivingSeat(sbSeat, basePlayers);
-      const firstToAct = findNextLivingSeat(bbSeat, basePlayers);
 
       const newDeck = createDeck();
       let deckIndex = 0;
+
+      // Clockwise 2-pass hole card dealing starting from Small Blind (sbSeat)
+      const totalSeats = basePlayers.length;
+      const clockwiseLivingSeats: number[] = [];
+      for (let offset = 0; offset < totalSeats; offset++) {
+        const sIdx = (sbSeat + offset) % totalSeats;
+        const p = basePlayers[sIdx];
+        if (p && !p.eliminated && p.chips > 0) {
+          clockwiseLivingSeats.push(sIdx);
+        }
+      }
+
+      const dealtHoleCards = new Map<number, Card[]>();
+      for (const sIdx of clockwiseLivingSeats) {
+        dealtHoleCards.set(sIdx, []);
+      }
+
+      let dealOrderCounter = 0;
+      for (let pass = 0; pass < 2; pass++) {
+        for (const sIdx of clockwiseLivingSeats) {
+          const p = basePlayers[sIdx];
+          const showFace = p.isHuman && isPeekLockedRef.current;
+          const card = {
+            ...newDeck[deckIndex++],
+            faceUp: showFace,
+            dealOrder: dealOrderCounter++,
+          };
+          dealtHoleCards.get(sIdx)!.push(card);
+        }
+      }
 
       const rawPlayers: PlayerState[] = basePlayers.map((p, idx) => {
         if (p.eliminated || p.chips <= 0) {
@@ -419,11 +457,6 @@ export const App: React.FC = () => {
           };
         }
 
-        // Deal hole cards facedown by default (unless human has Lock Peek enabled)
-        const showFace = p.isHuman && isPeekLockedRef.current;
-        const c1 = { ...newDeck[deckIndex++], faceUp: showFace };
-        const c2 = { ...newDeck[deckIndex++], faceUp: showFace };
-
         let bet = 0;
         let chips = p.chips;
 
@@ -439,7 +472,7 @@ export const App: React.FC = () => {
 
         return {
           ...p,
-          cards: [c1, c2],
+          cards: dealtHoleCards.get(idx) || [],
           currentBet: bet,
           totalHandBet: bet,
           chips,
@@ -452,7 +485,7 @@ export const App: React.FC = () => {
               : idx === bbSeat
               ? `BB $${bet}`
               : undefined,
-          isTurn: idx === firstToAct,
+          isTurn: false,
           physicalAction: 'idle',
           hudStats: {
             ...prevHud,
@@ -461,11 +494,21 @@ export const App: React.FC = () => {
         };
       });
 
+      // Compute first actionable seat AFTER posting blinds (handles short-stack blind all-ins)
+      const firstToAct = findNextActionableSeat(bbSeat, rawPlayers);
+      if (firstToAct !== -1) {
+        rawPlayers[firstToAct].isTurn = true;
+      }
+
       setLastDecisionRecord(null);
 
       const pot = rawPlayers.reduce((acc, p) => acc + p.currentBet, 0);
       const sidePots = calculateSidePots(rawPlayers);
       const remainingDeck = newDeck.slice(deckIndex);
+      const actualHighBet = Math.max(
+        blindLevelObj.bigBlind,
+        ...rawPlayers.map((p) => p.currentBet)
+      );
 
       setDeck(remainingDeck);
       deckRef.current = remainingDeck;
@@ -474,13 +517,13 @@ export const App: React.FC = () => {
         phase: 'preflop',
         pot,
         sidePots,
-        currentHighBet: blindLevelObj.bigBlind,
+        currentHighBet: actualHighBet,
         minRaise: blindLevelObj.bigBlind,
         smallBlind: blindLevelObj.smallBlind,
         bigBlind: blindLevelObj.bigBlind,
         blindLevel: blindLevelObj.level,
         dealerSeat,
-        activeSeat: firstToAct,
+        activeSeat: firstToAct !== -1 ? firstToAct : bbSeat,
         communityCards: [],
         burnCardsCount: 0,
         winners: [],
@@ -504,9 +547,15 @@ export const App: React.FC = () => {
         const dealerCallout =
           !resetTournament && blindLevelObj.level > prevTable.blindLevel
             ? `Blinds up to $${blindLevelObj.smallBlind} and $${blindLevelObj.bigBlind}. Dealing hand ${nextHandCount}.`
-            : `Shuffle up and deal. Hand ${nextHandCount}, blinds $${blindLevelObj.smallBlind} and $${blindLevelObj.bigBlind}.`;
+            : `Hand ${nextHandCount}, blinds $${blindLevelObj.smallBlind} and $${blindLevelObj.bigBlind}.`;
         appendChatMessage('dealer', 'VIP Croupier', '#facc15', dealerCallout, true);
         pokerAudio.speakDealer(dealerCallout);
+      }
+
+      const playersWithChipsLeft = updatedPlayers.filter((p) => !p.eliminated && !p.folded && p.chips > 0);
+      if (firstToAct === -1 || (playersWithChipsLeft.length <= 1 && updatedPlayers.every((p) => p.eliminated || p.folded || p.allIn || p.currentBet >= actualHighBet))) {
+        triggerDramaticAllInRunout(updatedPlayers, nextTable);
+        return;
       }
 
       if (!updatedPlayers[firstToAct].isHuman) {
@@ -542,96 +591,139 @@ export const App: React.FC = () => {
    * Flips all remaining contenders' hole cards face-up and deals Flop -> Turn -> River with 1.15s suspense pauses
    */
   const triggerDramaticAllInRunout = (currentPlayers: PlayerState[], currentTable: TableState) => {
-    const revealedPlayers = currentPlayers.map((p) => ({
-      ...p,
-      currentBet: 0,
-      isTurn: false,
-      isWatchingPhone: false,
-      cards: !p.folded && !p.eliminated ? p.cards.map((c) => ({ ...c, faceUp: true })) : p.cards,
-    }));
+    const gen = turnGenerationRef.current;
 
-    const runoutTable: TableState = {
-      ...currentTable,
-      currentHighBet: 0,
-      stagedBet: 0,
-      isAllInRunout: true,
+    const startRunoutSequence = () => {
+      if (turnGenerationRef.current !== gen) return;
+
+      const revealedPlayers = currentPlayers.map((p) => ({
+        ...p,
+        currentBet: 0,
+        isTurn: false,
+        isWatchingPhone: false,
+        cards: !p.folded && !p.eliminated ? p.cards.map((c) => ({ ...c, faceUp: true })) : p.cards,
+      }));
+
+      const runoutTable: TableState = {
+        ...currentTable,
+        currentHighBet: 0,
+        stagedBet: 0,
+        isAllInRunout: true,
+      };
+
+      setMusicMood('high_stakes');
+      pokerAudio.setMusicMood('high_stakes');
+
+      if (!isTitleModeRef.current) {
+        const msg = 'All-in showdown! Players, turn your cards face up.';
+        appendChatMessage('dealer', 'VIP Croupier', '#facc15', msg, true);
+        pokerAudio.speakDealer(msg);
+      }
+
+      setPlayers(revealedPlayers);
+      playersRef.current = revealedPlayers;
+      setTable(runoutTable);
+      tableRef.current = runoutTable;
+      syncSceneAll(runoutTable, revealedPlayers);
+
+      const dealNextRunoutStreet = (tState: TableState, pList: PlayerState[], delayMs: number) => {
+        runoutTimeoutRef.current = window.setTimeout(() => {
+          if (turnGenerationRef.current !== gen) return;
+          let nextDeck = [...deckRef.current];
+          if (nextDeck.length < 4) {
+            nextDeck = buildRemainingDeck([
+              ...pList.flatMap((p) => p.cards),
+              ...tState.communityCards,
+            ]);
+          }
+          const nextCommunity = [...tState.communityCards];
+          let nextPhase = tState.phase;
+          let nextBurn = tState.burnCardsCount;
+
+          if (tState.phase === 'preflop') {
+            nextPhase = 'flop';
+            nextBurn += 1;
+            nextDeck.shift(); // Burn
+            const flop = [nextDeck.shift()!, nextDeck.shift()!, nextDeck.shift()!].map((c, fIdx) => ({
+              ...c,
+              faceUp: true,
+              dealOrder: fIdx,
+            }));
+            nextCommunity.push(...flop);
+            sceneRef.current?.triggerDealerAction('burn_tap');
+            pokerAudio.playBurnTap();
+            pokerAudio.playCardFlip();
+          } else if (tState.phase === 'flop') {
+            nextPhase = 'turn';
+            nextBurn += 1;
+            nextDeck.shift(); // Burn
+            nextCommunity.push({ ...nextDeck.shift()!, faceUp: true, dealOrder: 0 });
+            sceneRef.current?.triggerDealerAction('burn_tap');
+            pokerAudio.playBurnTap();
+            pokerAudio.playCardFlip();
+          } else if (tState.phase === 'turn') {
+            nextPhase = 'river';
+            nextBurn += 1;
+            nextDeck.shift(); // Burn
+            nextCommunity.push({ ...nextDeck.shift()!, faceUp: true, dealOrder: 0 });
+            sceneRef.current?.triggerDealerAction('burn_tap');
+            pokerAudio.playBurnTap();
+            pokerAudio.playCardFlip();
+          } else {
+            void pokerAudio.waitForVoiceIdle().then(() => {
+              if (turnGenerationRef.current !== gen) return;
+              runoutTimeoutRef.current = window.setTimeout(() => {
+                if (turnGenerationRef.current !== gen) return;
+                handleShowdown(pList, tState, nextCommunity);
+              }, Math.round(350 / speedMultiplierRef.current));
+            });
+            return;
+          }
+
+          setDeck(nextDeck);
+          deckRef.current = nextDeck;
+
+          const updatedTable: TableState = {
+            ...tState,
+            phase: nextPhase,
+            communityCards: nextCommunity,
+            burnCardsCount: nextBurn,
+            isAllInRunout: true,
+          };
+
+          setTable(updatedTable);
+          tableRef.current = updatedTable;
+          syncSceneAll(updatedTable, pList);
+
+          dealNextRunoutStreet(
+            updatedTable,
+            pList,
+            Math.round(1150 / speedMultiplierRef.current)
+          );
+        }, delayMs);
+      };
+
+      // Let the Dealer's "All-in showdown!" announcement finish before dealing the first runout street
+      void pokerAudio.waitForVoiceIdle().then(() => {
+        if (turnGenerationRef.current !== gen) return;
+        dealNextRunoutStreet(
+          runoutTable,
+          revealedPlayers,
+          Math.round(450 / speedMultiplierRef.current)
+        );
+      });
     };
 
-    setMusicMood('high_stakes');
-    pokerAudio.setMusicMood('high_stakes');
-
-    if (!isTitleModeRef.current) {
-      const msg = 'All-in showdown! Players, turn your cards face up.';
-      appendChatMessage('dealer', 'VIP Croupier', '#facc15', msg, true);
-      pokerAudio.speakDealer(msg);
+    if (pokerAudio.isSpeakingOrQueued()) {
+      void pokerAudio.waitForVoiceIdle().then(() => {
+        if (turnGenerationRef.current !== gen) return;
+        runoutTimeoutRef.current = window.setTimeout(() => {
+          startRunoutSequence();
+        }, Math.round(500 / speedMultiplierRef.current));
+      });
+    } else {
+      startRunoutSequence();
     }
-
-    setPlayers(revealedPlayers);
-    playersRef.current = revealedPlayers;
-    setTable(runoutTable);
-    tableRef.current = runoutTable;
-    syncSceneAll(runoutTable, revealedPlayers);
-
-    const dealNextRunoutStreet = (tState: TableState, pList: PlayerState[]) => {
-      runoutTimeoutRef.current = window.setTimeout(() => {
-        const nextDeck = [...deckRef.current];
-        const nextCommunity = [...tState.communityCards];
-        let nextPhase = tState.phase;
-        let nextBurn = tState.burnCardsCount;
-
-        if (tState.phase === 'preflop') {
-          nextPhase = 'flop';
-          nextBurn += 1;
-          nextDeck.shift(); // Burn
-          const flop = [nextDeck.shift()!, nextDeck.shift()!, nextDeck.shift()!].map((c) => ({
-            ...c,
-            faceUp: true,
-          }));
-          nextCommunity.push(...flop);
-          sceneRef.current?.triggerDealerAction('burn_tap');
-          pokerAudio.playBurnTap();
-          pokerAudio.playCardFlip();
-        } else if (tState.phase === 'flop') {
-          nextPhase = 'turn';
-          nextBurn += 1;
-          nextDeck.shift(); // Burn
-          nextCommunity.push({ ...nextDeck.shift()!, faceUp: true });
-          sceneRef.current?.triggerDealerAction('burn_tap');
-          pokerAudio.playBurnTap();
-          pokerAudio.playCardFlip();
-        } else if (tState.phase === 'turn') {
-          nextPhase = 'river';
-          nextBurn += 1;
-          nextDeck.shift(); // Burn
-          nextCommunity.push({ ...nextDeck.shift()!, faceUp: true });
-          sceneRef.current?.triggerDealerAction('burn_tap');
-          pokerAudio.playBurnTap();
-          pokerAudio.playCardFlip();
-        } else {
-          handleShowdown(pList, tState, nextCommunity);
-          return;
-        }
-
-        setDeck(nextDeck);
-        deckRef.current = nextDeck;
-
-        const updatedTable: TableState = {
-          ...tState,
-          phase: nextPhase,
-          communityCards: nextCommunity,
-          burnCardsCount: nextBurn,
-          isAllInRunout: true,
-        };
-
-        setTable(updatedTable);
-        tableRef.current = updatedTable;
-        syncSceneAll(updatedTable, pList);
-
-        dealNextRunoutStreet(updatedTable, pList);
-      }, Math.round(1150 / speedMultiplierRef.current));
-    };
-
-    dealNextRunoutStreet(runoutTable, revealedPlayers);
   };
 
   /**
@@ -661,7 +753,13 @@ export const App: React.FC = () => {
       lastAction: p.folded || p.allIn || p.eliminated ? p.lastAction : undefined,
     }));
 
-    const nextDeck = [...deckRef.current];
+    let nextDeck = [...deckRef.current];
+    if (nextDeck.length < 4) {
+      nextDeck = buildRemainingDeck([
+        ...resetPlayers.flatMap((p) => p.cards),
+        ...currentTable.communityCards,
+      ]);
+    }
     const newCommunity = [...currentTable.communityCards];
     let nextPhase: TablePhase = currentTable.phase;
     let nextBurn = currentTable.burnCardsCount;
@@ -671,9 +769,10 @@ export const App: React.FC = () => {
       nextPhase = 'flop';
       nextBurn += 1;
       nextDeck.shift(); // Burn card
-      const flop = [nextDeck.shift()!, nextDeck.shift()!, nextDeck.shift()!].map((c) => ({
+      const flop = [nextDeck.shift()!, nextDeck.shift()!, nextDeck.shift()!].map((c, fIdx) => ({
         ...c,
         faceUp: true,
+        dealOrder: fIdx,
       }));
       newCommunity.push(...flop);
       dealerStreetAnnouncement = 'Burn and turn the Flop.';
@@ -681,13 +780,13 @@ export const App: React.FC = () => {
       nextPhase = 'turn';
       nextBurn += 1;
       nextDeck.shift(); // Burn
-      newCommunity.push({ ...nextDeck.shift()!, faceUp: true });
+      newCommunity.push({ ...nextDeck.shift()!, faceUp: true, dealOrder: 0 });
       dealerStreetAnnouncement = 'Fourth street, the Turn.';
     } else if (currentTable.phase === 'turn') {
       nextPhase = 'river';
       nextBurn += 1;
       nextDeck.shift(); // Burn
-      newCommunity.push({ ...nextDeck.shift()!, faceUp: true });
+      newCommunity.push({ ...nextDeck.shift()!, faceUp: true, dealOrder: 0 });
       dealerStreetAnnouncement = 'Fifth street, the River.';
     }
 
@@ -843,7 +942,13 @@ export const App: React.FC = () => {
 
     if (winnerInfos.length > 0 && !isTitleModeRef.current) {
       const mainWinner = winnerInfos[0];
-      const winAnnouncement = `${mainWinner.playerName} wins $${mainWinner.amount} with ${mainWinner.handName}!`;
+      const isHumanWinner = mainWinner.playerId === human.id;
+      // Drop the "(Shark)"-style nickname so TTS doesn't read it aloud
+      const winnerName = isHumanWinner ? 'You' : mainWinner.playerName.replace(/\s*\(.*\)$/, '');
+      const winAnnouncement =
+        mainWinner.handName === 'Opponents Folded'
+          ? `${winnerName} ${isHumanWinner ? 'take' : 'takes'} $${mainWinner.amount}. Everyone else folded.`
+          : `${winnerName} ${isHumanWinner ? 'win' : 'wins'} $${mainWinner.amount} with ${mainWinner.handName}!`;
       appendChatMessage('dealer', 'VIP Croupier', '#facc15', winAnnouncement, true);
       pokerAudio.speakDealer(winAnnouncement);
     }
@@ -878,7 +983,8 @@ export const App: React.FC = () => {
     const { winners, chipAwards, sidePots } = adjudicateShowdown(
       revealedPlayers,
       communityCards,
-      tState.pot
+      tState.pot,
+      tState.dealerSeat
     );
 
     const awardedPlayers = revealedPlayers.map((p) => {
@@ -973,26 +1079,13 @@ export const App: React.FC = () => {
             gtoAccuracyScore: Math.max(0, Math.min(100, nextScore)),
           };
         });
-
-        // Trigger AI Shark / Table Banter reaction on notable Best Moves or Blunders
-        const gtoReaction = generateAIGTOReactionBanter(decisionRecord, currentPlayers);
-        if (gtoReaction) {
-          window.setTimeout(() => {
-            const reactor = playersRef.current.find((p) => p.id === gtoReaction.senderId);
-            if (!reactor) return;
-            appendChatMessage(reactor.id, reactor.name, reactor.color, gtoReaction.text, false);
-            pokerAudio.speakPlayer(
-              gtoReaction.text,
-              reactor.persona || 'general_man',
-              reactor.voiceName || 'Charon',
-              reactor.voiceStyle || 'calm'
-            );
-          }, 520);
-        }
       }
 
       let betAdded = 0;
       let raisedHighBet = false;
+      let fullRaiseReopensAction = false;
+      const prevHighBet = currentTable.currentHighBet;
+      const prevMinRaise = currentTable.minRaise;
       let physicalAction: PhysicalActionType = 'idle';
 
       switch (action.type) {
@@ -1040,9 +1133,10 @@ export const App: React.FC = () => {
           player.allIn = player.chips === 0;
           player.hasActedThisRound = true;
 
-          const raiseDiff = player.currentBet - currentTable.currentHighBet;
+          const raiseDiff = player.currentBet - prevHighBet;
           if (raiseDiff > 0) {
-            currentTable.minRaise = Math.max(currentTable.minRaise, raiseDiff);
+            fullRaiseReopensAction = raiseDiff >= prevMinRaise;
+            currentTable.minRaise = Math.max(prevMinRaise, raiseDiff);
             currentTable.currentHighBet = player.currentBet;
             raisedHighBet = true;
           }
@@ -1062,9 +1156,10 @@ export const App: React.FC = () => {
           player.allIn = true;
           player.hasActedThisRound = true;
 
-          const raiseDiff = player.currentBet - currentTable.currentHighBet;
+          const raiseDiff = player.currentBet - prevHighBet;
           if (raiseDiff > 0) {
-            currentTable.minRaise = Math.max(currentTable.minRaise, raiseDiff);
+            fullRaiseReopensAction = raiseDiff >= prevMinRaise;
+            currentTable.minRaise = Math.max(prevMinRaise, raiseDiff);
             currentTable.currentHighBet = player.currentBet;
             raisedHighBet = true;
           }
@@ -1096,7 +1191,8 @@ export const App: React.FC = () => {
         }
       }
 
-      // If a player raised the high bet, other active players must act again
+      // TDA Rule 47: Full raises reopen action for all active players;
+      // incomplete all-in raises only require players who haven't acted at prevHighBet to act.
       if (raisedHighBet) {
         for (let i = 0; i < currentPlayers.length; i++) {
           if (
@@ -1105,7 +1201,9 @@ export const App: React.FC = () => {
             !currentPlayers[i].allIn &&
             !currentPlayers[i].eliminated
           ) {
-            currentPlayers[i] = { ...currentPlayers[i], hasActedThisRound: false };
+            if (fullRaiseReopensAction || currentPlayers[i].currentBet < prevHighBet) {
+              currentPlayers[i] = { ...currentPlayers[i], hasActedThisRound: false };
+            }
           }
         }
       }
@@ -1117,22 +1215,58 @@ export const App: React.FC = () => {
       currentTable.sidePots = calculateSidePots(currentPlayers);
 
       const playersWithUpdatedTells = refreshAITellsAndMood(currentPlayers, currentTable);
+      const gen = turnGenerationRef.current;
+
+      const activeContenders = playersWithUpdatedTells.filter((p) => !p.eliminated && !p.folded);
+      const playersWithChips = activeContenders.filter((p) => p.chips > 0);
+      const isAllInTransition =
+        action.type === 'allin' || (activeContenders.length > 1 && playersWithChips.length <= 1);
+
+      const schedulePostActionTransition = (transitionFn: () => void) => {
+        // Render the acting player's move & chat bubble immediately before transitioning streets
+        setPlayers(playersWithUpdatedTells);
+        playersRef.current = playersWithUpdatedTells;
+        setTable(currentTable);
+        tableRef.current = currentTable;
+        syncSceneAll(currentTable, playersWithUpdatedTells);
+
+        const hadActiveVoice = pokerAudio.isSpeakingOrQueued();
+        const baseVoicePauseMs = isAllInTransition ? 500 : 380;
+        const baseSilentPauseMs = isAllInTransition ? 650 : 700;
+        const pauseMs = Math.max(
+          110,
+          Math.round((hadActiveVoice ? baseVoicePauseMs : baseSilentPauseMs) / speedMultiplierRef.current)
+        );
+
+        void pokerAudio.waitForVoiceIdle().then(() => {
+          if (turnGenerationRef.current !== gen) return;
+          phaseTransitionTimeoutRef.current = window.setTimeout(() => {
+            if (turnGenerationRef.current !== gen) return;
+            transitionFn();
+          }, pauseMs);
+        });
+      };
 
       // Check if only 1 player remains unfolded (immediate uncontested win)
-      const activeContenders = playersWithUpdatedTells.filter((p) => !p.eliminated && !p.folded);
       if (activeContenders.length === 1) {
-        handleSinglePlayerWin(activeContenders[0], currentTable, playersWithUpdatedTells);
+        schedulePostActionTransition(() => {
+          handleSinglePlayerWin(activeContenders[0], currentTable, playersWithUpdatedTells);
+        });
         return;
       }
 
       // Check if betting round is complete
       const isRoundDone = checkRoundComplete(playersWithUpdatedTells, currentTable);
       if (isRoundDone) {
-        advancePhase(playersWithUpdatedTells, currentTable);
+        schedulePostActionTransition(() => {
+          advancePhase(playersWithUpdatedTells, currentTable);
+        });
       } else {
         const nextSeat = findNextActionableSeat(activeIdx, playersWithUpdatedTells);
         if (nextSeat === -1) {
-          advancePhase(playersWithUpdatedTells, currentTable);
+          schedulePostActionTransition(() => {
+            advancePhase(playersWithUpdatedTells, currentTable);
+          });
           return;
         }
 
@@ -1159,24 +1293,38 @@ export const App: React.FC = () => {
 
   /**
    * Autonomous AI decision loop with persona-specific deliberation delay
-   * (Bao has a distracted delay while scrolling his smartphone)
+   * Synchronized with voice completion so AI players do not talk over the Croupier or each other
    */
   const runAITurn = (seatIdx: number, currentPlayers: PlayerState[], currentTable: TableState) => {
     const ai = currentPlayers[seatIdx];
     if (!ai || ai.isHuman || ai.folded || ai.allIn || ai.eliminated) return;
 
+    const gen = turnGenerationRef.current;
     const isBaoScrolling = ai.persona === 'heavy_phone' && ai.isWatchingPhone;
-    const baseDelay = isBaoScrolling ? 1250 + Math.random() * 650 : 650 + Math.random() * 650;
-    const delay = Math.max(120, Math.round(baseDelay / speedMultiplierRef.current));
+    const hadActiveVoice = pokerAudio.isSpeakingOrQueued();
 
-    if (isBaoScrolling && !isTitleModeRef.current) {
-      pokerAudio.playPhoneReelLeak();
-    }
+    void pokerAudio.waitForVoiceIdle().then(() => {
+      if (turnGenerationRef.current !== gen) return;
 
-    aiTimeoutRef.current = window.setTimeout(() => {
-      const decision = getAIDecision(ai, currentTable, currentTable.communityCards);
-      handleAction(decision);
-    }, delay);
+      const baseDelay = hadActiveVoice
+        ? isBaoScrolling
+          ? 700 + Math.random() * 420
+          : 380 + Math.random() * 260
+        : isBaoScrolling
+        ? 1150 + Math.random() * 550
+        : 650 + Math.random() * 500;
+      const delay = Math.max(120, Math.round(baseDelay / speedMultiplierRef.current));
+
+      if (isBaoScrolling && !isTitleModeRef.current) {
+        pokerAudio.playPhoneReelLeak();
+      }
+
+      aiTimeoutRef.current = window.setTimeout(() => {
+        if (turnGenerationRef.current !== gen) return;
+        const decision = getAIDecision(ai, currentTable, currentTable.communityCards);
+        handleAction(decision);
+      }, delay);
+    });
   };
 
   /**
@@ -1805,7 +1953,7 @@ export const App: React.FC = () => {
             burnCardsCount: 3,
             winners: [
               {
-                playerId: 'human',
+                playerId: nextPlayers[0].id,
                 playerName: 'You',
                 amount: 420,
                 handName: 'Royal Flush',
@@ -1817,6 +1965,13 @@ export const App: React.FC = () => {
           break;
         }
       }
+
+      const remainingScenarioDeck = buildRemainingDeck([
+        ...nextPlayers.flatMap((p) => p.cards),
+        ...nextTable.communityCards,
+      ]);
+      setDeck(remainingScenarioDeck);
+      deckRef.current = remainingScenarioDeck;
 
       setIsPeeking(nextPeeking);
       isPeekingRef.current = nextPeeking;
@@ -1874,9 +2029,16 @@ export const App: React.FC = () => {
     };
 
     // Keyboard shortcut for peeking cards (Hold Spacebar) & XR View Offset nudges
+    let isSpacePeeking = false;
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      if (target?.isContentEditable || target?.closest('input, textarea, select, button, a, [role="button"]')) {
+        return;
+      }
       if (e.code === 'Space' && !e.repeat) {
         e.preventDefault();
+        isSpacePeeking = true;
         handlePeek(true);
       } else if (xrManagerRef.current?.isPresenting) {
         // XR Viewpoint fine-tuning keys:
@@ -1895,14 +2057,20 @@ export const App: React.FC = () => {
         }
       }
     };
+    const releaseSpacePeek = () => {
+      if (!isSpacePeeking) return;
+      isSpacePeeking = false;
+      handlePeek(false);
+    };
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
+      if (e.code === 'Space' && isSpacePeeking) {
         e.preventDefault();
-        handlePeek(false);
+        releaseSpacePeek();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', releaseSpacePeek);
 
     // Deal initial preview hand in the background of the 3D Title Screen
     startNewHand(createInitialPlayers(), true);
@@ -1911,6 +2079,7 @@ export const App: React.FC = () => {
       clearTimers();
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', releaseSpacePeek);
       casinoScene.destroy();
     };
   }, []);
@@ -1993,24 +2162,39 @@ export const App: React.FC = () => {
       return;
     }
 
+    let cancelled = false;
+
     if (table.phase === 'showdown') {
-      const delay = Math.max(180, Math.round(1100 / speedMultiplier));
-      autoPilotTimeoutRef.current = window.setTimeout(() => {
-        if (tableRef.current.tournamentWinnerId || playersRef.current[0]?.eliminated) {
-          startNewTournament();
-        } else {
-          startNewHand();
-        }
-      }, delay);
-      return;
+      const delay = Math.max(180, Math.round(900 / speedMultiplier));
+      void pokerAudio.waitForVoiceIdle().then(() => {
+        if (cancelled) return;
+        autoPilotTimeoutRef.current = window.setTimeout(() => {
+          if (cancelled) return;
+          if (tableRef.current.tournamentWinnerId || playersRef.current[0]?.eliminated) {
+            startNewTournament();
+          } else {
+            startNewHand();
+          }
+        }, delay);
+      });
+      return () => {
+        cancelled = true;
+      };
     }
 
     if (human && human.isTurn && !human.folded && !human.allIn && !table.isAllInRunout) {
-      const delay = Math.max(140, Math.round(620 / speedMultiplier));
-      autoPilotTimeoutRef.current = window.setTimeout(() => {
-        const activeRec = solverMode === 'exploit' ? gtoAnalysis.exploit : gtoAnalysis.pureGto;
-        handleAction(activeRec.bestAction);
-      }, delay);
+      const delay = Math.max(140, Math.round(520 / speedMultiplier));
+      void pokerAudio.waitForVoiceIdle().then(() => {
+        if (cancelled) return;
+        autoPilotTimeoutRef.current = window.setTimeout(() => {
+          if (cancelled) return;
+          const activeRec = solverMode === 'exploit' ? gtoAnalysis.exploit : gtoAnalysis.pureGto;
+          handleAction(activeRec.bestAction);
+        }, delay);
+      });
+      return () => {
+        cancelled = true;
+      };
     }
   }, [
     isAutoPilot,

@@ -527,7 +527,7 @@ async function generateDemoVideo() {
       chapter: '01 / 08 • MONTE CARLO VIP SUITE & APPLE VISION PRO (WebXR)',
       speaker: '🎙️ SYSTEM OVERVIEW • GEMINI 3.8 TTS + LYRIA 3 + NANO BANANA',
       en: 'Realistic 3D WebXR Texas Hold’em Casino with Spatial Hand Tracking & AI Personas',
-      kr: '공간 핸드 트래킹·AI 페르소나·실시간 GTO 코칭을 결합한 3D WebXR 텍사스 홀덤 카지노',
+      kr: 'Spatial Hand Tracking, Behavioral AI Personas & Real-Time 13×13 GTO Coaching',
       bottomPx: 96,
     });
     await page.waitForTimeout(2200);
@@ -548,7 +548,7 @@ async function generateDemoVideo() {
       chapter: '01 / 08 • ENTERING THE MONTE CARLO VIP SUITE',
       speaker: '🎙️ VIP CROUPIER (DEALER VOICE)',
       en: '"Welcome to the Monte Carlo VIP table. Shuffle up and deal. Blinds $2 and $4."',
-      kr: '딜러: "몬테카를로 VIP 테이블에 오신 것을 환영합니다. 카드를 셔플하고 딜링합니다."',
+      kr: 'Dealer: "Welcome to the Monte Carlo VIP salon. Cards are in the air."',
       bottomPx: 118,
     });
     const playBtn = page
@@ -575,7 +575,7 @@ async function generateDemoVideo() {
       chapter: '02 / 08 • SEAT #0 POV & PHYSICAL 3D HOLE CARD PEEK',
       speaker: '🎙️ VIKTOR (SEAT #1 • THE SHARK) — ⌚ GLANCES AT GOLD WATCH',
       en: '"Ten dollars to play. Let’s see how you navigate this street."',
-      kr: '빅터 (샤크 AI): "$10 베팅입니다. 이번 스트리트를 어떻게 풀어나갈지 보죠." (손목시계 확인 텔)',
+      kr: 'Viktor (Shark AI): "$10 bet. Watch-glance sizing tell detected."',
       bottomPx: 118,
     });
     await page.waitForTimeout(4200);
@@ -591,7 +591,7 @@ async function generateDemoVideo() {
       chapter: '02 / 08 • TACTILE 3D CORNER PEEL & CLAY CHIP STACKS',
       speaker: '🃏 MACRO VIEW • HOLE CARDS (A♠ J♠) & 4 DENOMINATION STACKS',
       en: 'Shader-driven 3D card corner peel and physically stacked clay poker chips ($1, $5, $25, $100)',
-      kr: '물리적 3D 카드 모서리 피킹(A♠ J♠) 및 4종 클레이 포커 칩 스택·공간 액션 버튼',
+      kr: 'Tactile 3D hole-card corner peel (A♠ J♠) with 4 clay chip denominations & spatial rim controls',
       bottomPx: 42,
     });
     await page.waitForTimeout(4400);
@@ -610,7 +610,7 @@ async function generateDemoVideo() {
       chapter: '03 / 08 • GOLDEN BETTING RING & AI TABLE BANTER',
       speaker: '🎙️ ELENA (SEAT #2 • THE ROCK)',
       en: '"Too rich for my blood right now. I fold."',
-      kr: '엘레나 (타이트 AI): "지금 제게는 너무 높은 베팅이네요. 폴드하겠습니다."',
+      kr: 'Elena (Tight-Aggressive AI): "Too rich for my range right now. I fold."',
       bottomPx: 42,
     });
     await page.waitForTimeout(3800);
@@ -625,7 +625,7 @@ async function generateDemoVideo() {
       chapter: '03 / 08 • ARTICULATED 3D VIP CAST & NANO BANANA PORTRAITS',
       speaker: '🎙️ MARCUS (SEAT #4 • THE MANIAC) — 🎲 CHIP FIDGET BLUFF TELL',
       en: '"Haha! Scared money never wins in Monte Carlo! Count me in!"',
-      kr: '마커스 (매니악 AI): "하하! 겁먹은 돈으로는 몬테카를로에서 절대 못 이기죠! 저도 갑니다!"',
+      kr: 'Marcus (LAG Maniac AI): "Scared money never wins in Monte Carlo! Count me in!"',
       bottomPx: 42,
     });
     await page.waitForTimeout(4800);
@@ -644,7 +644,7 @@ async function generateDemoVideo() {
       chapter: '04 / 08 • LIVE BEHAVIORAL TELL #1: BAO SCROLLING SMARTPHONE REELS',
       speaker: '🎙️ BAO (SEAT #3 • CALLING STATION) — 📱 TINNY PHONE AUDIO LEAK',
       en: '"Hold on, watching this reel on my phone... Yeah, I call eight dollars."',
-      kr: '바오 (콜링 스테이션 AI): "잠깐만요, 폰으로 릴스 영상 좀 보면서... 네, $8 콜할게요." (약하거나 평범한 핸드 텔)',
+      kr: 'Bao (Calling Station AI): Distracted smartphone reel scrolling indicates a weak/marginal holding',
       bottomPx: 42,
     });
     await page.waitForTimeout(9200);
@@ -663,7 +663,7 @@ async function generateDemoVideo() {
       chapter: '05 / 08 • LIVE BEHAVIORAL TELL #2: BAO PUTS PHONE FLAT ON RAIL (🔥 MONSTER HAND!)',
       speaker: '🎙️ BAO (SEAT #3) — 📱➡️🃏 LOCKS PHONE & LEANS FORWARD WITH POCKET ACES',
       en: '"Wait. Putting the phone down. All focus now. Raise to forty-five dollars."',
-      kr: '바오: "잠깐, 이제 휴대폰 내려놓습니다. 완전 집중 모드예요. $45로 레이즈합니다." (몬스터 핸드 텔!)',
+      kr: 'Bao locks his smartphone face-down on the leather rail — Live Monster-Hand Tell!',
       bottomPx: 42,
     });
     await page.waitForTimeout(5400);
@@ -678,7 +678,7 @@ async function generateDemoVideo() {
       chapter: '05 / 08 • HIGH-STAKES SOUNDTRACK SHIFT & HUD TELL ALERT BADGE',
       speaker: '🎙️ VIKTOR (SEAT #1) — ⚠️ WARNING ABOUT BAO’S TELL',
       en: '"Careful... Bao just put his phone flat on the rail. He has a monster hand."',
-      kr: '빅터: "조심하세요... 바오가 방금 휴대폰을 테이블 레일에 내려놓았습니다. 엄청난 핸드입니다."',
+      kr: 'Viktor: "Careful... Bao just placed his phone flat on the rail. He holds a monster."',
       bottomPx: 118,
     });
     await page.waitForTimeout(4800);
@@ -691,7 +691,7 @@ async function generateDemoVideo() {
     if ((await menuTrigger.count()) > 0) {
       await menuTrigger.click();
       await page.waitForTimeout(600);
-      const gtoBtn = page.locator('button:has-text("13×13 GTO 솔버")');
+      const gtoBtn = page.locator('button:has-text("13×13 GTO Solver")');
       if ((await gtoBtn.count()) > 0) {
         await gtoBtn.click();
       }
@@ -700,13 +700,13 @@ async function generateDemoVideo() {
       chapter: '06 / 08 • REAL-TIME 169-HAND GTO SOLVER & NODE-LOCKED EXPLOIT ENGINE',
       speaker: '🎙️ VIP CROUPIER • GTO & EXPLOITATIVE COACH',
       en: '"Real-time GTO Solver active. Node-locked exploitative mode adjusts your optimal strategy against Bao."',
-      kr: '실시간 13×13 GTO 매트릭스·에퀴티·팟 오즈 분석 및 바오의 행동 텔을 반영한 익스플로잇 코칭',
+      kr: 'Real-time 13×13 GTO Range Matrix, Equity, Pot Odds & Node-Locked Exploitative Coaching',
       bottomPx: 28,
     });
     await page.waitForTimeout(8800);
 
     // Close GTO Drawer before Scene 7
-    const closeGtoBtn = page.locator('button:has-text("Close"), button:has-text("닫기")').first();
+    const closeGtoBtn = page.locator('button:has-text("Close")').first();
     if ((await closeGtoBtn.count()) > 0) {
       await closeGtoBtn.click().catch(() => {});
     }
@@ -727,7 +727,7 @@ async function generateDemoVideo() {
       chapter: '07 / 08 • DRAMATIC MULTI-WAY ALL-IN RUNOUT (MAIN POT $260 • SIDE POT $240)',
       speaker: '🎙️ VIP CROUPIER • CRIMSON & GOLD SPOTLIGHT CHOREOGRAPHY',
       en: '"All-in showdown! Players, turn your cards face up. Dealing the turn and river."',
-      kr: '딜러: "올인 쇼다운! 모든 플레이어의 카드를 오픈합니다. 턴과 리버 카드를 딜링합니다."',
+      kr: 'Dealer: "All-in showdown! Cards face up on the felt as we deal the turn and river."',
       bottomPx: 42,
     });
     await page.waitForTimeout(7800);
@@ -746,7 +746,7 @@ async function generateDemoVideo() {
       chapter: '08 / 08 • ROYAL FLUSH SHOWDOWN & POT SWEEP CELEBRATION',
       speaker: '🎙️ VIP CROUPIER — 🏆 ROYAL FLUSH (A♠ K♠ Q♠ J♠ 10♠) WINS $420!',
       en: '"Royal Flush! Seat Zero wins the four hundred twenty dollar main pot!"',
-      kr: '딜러: "로얄 플러쉬! 좌석 #0 플레이어가 $420 메인 팟을 차지합니다!"',
+      kr: 'Dealer: "Royal Flush! Seat #0 sweeps the $420 main pot!"',
       bottomPx: 118,
     });
     await page.waitForTimeout(5200);
@@ -756,7 +756,7 @@ async function generateDemoVideo() {
       chapter: '08 / 08 • MONTE CARLO VIP 3D POKER • DEPLOYED ON GOOGLE CLOUD RUN',
       speaker: '🎙️ MARCUS (SEAT #4) — 🎉 TABLE REACTION',
       en: '"Unbelievable! A Royal Flush under the Monte Carlo lights! Nice hand!"',
-      kr: '마커스: "믿을 수 없군요! 몬테카를로 조명 아래서 로얄 플러쉬라니! 나이스 핸드!"',
+      kr: 'Marcus: "Unbelievable! A Royal Flush under the Monte Carlo lights! Nice hand!"',
       bottomPx: 118,
     });
     await page.waitForTimeout(4800);

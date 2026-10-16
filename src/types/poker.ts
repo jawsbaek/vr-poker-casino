@@ -7,6 +7,7 @@ export interface Card {
   suit: Suit;
   rank: CardRank;
   faceUp: boolean;
+  dealOrder?: number;
 }
 
 export type ChipDenomination = 1 | 5 | 25 | 100;

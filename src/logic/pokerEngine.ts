@@ -15,7 +15,11 @@ import {
   ChatMessage,
   HandDecisionRecord,
 } from '../types/poker';
-import { createInitialHUDStats } from './gtoEngine';
+import {
+  createInitialHUDStats,
+  evaluateComboStrength,
+  calculateOutsAndDraws,
+} from './gtoEngine';
 
 export const SUITS: Suit[] = ['hearts', 'diamonds', 'clubs', 'spades'];
 export const RANKS: CardRank[] = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
@@ -38,7 +42,55 @@ export function getBlindLevelForHand(handCount: number): BlindLevel {
   return TOURNAMENT_BLIND_LEVELS[idx];
 }
 
-export function createDeck(): Card[] {
+/**
+ * Deterministic 32-bit Mulberry32 PRNG for reproducible simulations, tests, and seeded Monte Carlo rollouts.
+ */
+export function createSeededRNG(seed: number): () => number {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * FNV-1a 32-bit string hash for deriving deterministic PRNG seeds from canonical game state strings.
+ */
+export function hashStringSeed(input: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+/**
+ * Unbiased integer in [0, maxExclusive) using Web Crypto CSPRNG with rejection sampling (or optional seeded RNG).
+ */
+export function randomIntUnbiased(maxExclusive: number, rng?: () => number): number {
+  if (maxExclusive <= 1) return 0;
+  if (rng) {
+    return Math.floor(rng() * maxExclusive);
+  }
+  const cryptoObj = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+  if (cryptoObj && typeof cryptoObj.getRandomValues === 'function') {
+    const maxUint32 = 0x100000000;
+    const limit = maxUint32 - (maxUint32 % maxExclusive);
+    const buf = new Uint32Array(1);
+    let val = 0;
+    do {
+      cryptoObj.getRandomValues(buf);
+      val = buf[0];
+    } while (val >= limit);
+    return val % maxExclusive;
+  }
+  return Math.floor(Math.random() * maxExclusive);
+}
+
+export function createDeck(rng?: () => number): Card[] {
   const deck: Card[] = [];
   let idCounter = 0;
   for (const suit of SUITS) {
@@ -51,16 +103,102 @@ export function createDeck(): Card[] {
       });
     }
   }
-  return shuffleDeck(deck);
+  return shuffleDeck(deck, rng);
 }
 
-export function shuffleDeck(deck: Card[]): Card[] {
+/**
+ * Fisher-Yates shuffle using unbiased CSPRNG rejection sampling (or optional deterministic RNG).
+ */
+export function shuffleDeck(deck: Card[], rng?: () => number): Card[] {
   const shuffled = [...deck];
   for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = randomIntUnbiased(i + 1, rng);
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
   return shuffled;
+}
+
+/**
+ * Builds a shuffled remaining deck excluding any cards already dealt to players or the board.
+ * Validates against duplicate cards and ensures scenario loads have a complete legal stub deck.
+ */
+export function buildRemainingDeck(usedCards: Card[], rng?: () => number): Card[] {
+  const usedKeys = new Set<string>();
+  for (const c of usedCards) {
+    usedKeys.add(`${c.suit}_${c.rank}`);
+  }
+  const deck: Card[] = [];
+  let idCounter = 0;
+  for (const suit of SUITS) {
+    for (const rank of RANKS) {
+      const key = `${suit}_${rank}`;
+      if (!usedKeys.has(key)) {
+        deck.push({
+          id: `card_${idCounter++}_${suit}_${rank}`,
+          suit,
+          rank,
+          faceUp: false,
+        });
+      } else {
+        idCounter++;
+      }
+    }
+  }
+  return shuffleDeck(deck, rng);
+}
+
+/**
+ * Standard casino clockwise 2-pass hole card dealing starting from Small Blind (sbSeat).
+ * Pass 1 deals each active player their first card clockwise; Pass 2 deals their second card clockwise.
+ * Attaches sequential `dealOrder` (0 .. 2*N - 1) to each dealt card for staggered 3D shoe flight.
+ */
+export function dealHoleCardsClockwise(
+  deck: Card[],
+  players: PlayerState[],
+  sbSeat: number
+): { updatedPlayers: PlayerState[]; remainingDeck: Card[] } {
+  const remainingDeck = [...deck];
+  const totalSeats = players.length;
+  const activeSeatOrder: number[] = [];
+
+  for (let offset = 0; offset < totalSeats; offset++) {
+    const seatIdx = (sbSeat + offset) % totalSeats;
+    const p = players[seatIdx];
+    if (p && !p.eliminated) {
+      activeSeatOrder.push(seatIdx);
+    }
+  }
+
+  const dealtBySeat = new Map<number, Card[]>();
+  for (const seatIdx of activeSeatOrder) {
+    dealtBySeat.set(seatIdx, []);
+  }
+
+  let dealOrder = 0;
+  for (let pass = 0; pass < 2; pass++) {
+    for (const seatIdx of activeSeatOrder) {
+      const rawCard = remainingDeck.pop();
+      if (!rawCard) break;
+      const player = players[seatIdx];
+      dealtBySeat.get(seatIdx)!.push({
+        ...rawCard,
+        faceUp: player.isHuman,
+        dealOrder: dealOrder++,
+      });
+    }
+  }
+
+  const updatedPlayers = players.map((p, idx) => {
+    if (p.eliminated) {
+      return { ...p, cards: [] };
+    }
+    return {
+      ...p,
+      cards: dealtBySeat.get(idx) || [],
+    };
+  });
+
+  return { updatedPlayers, remainingDeck };
 }
 
 export function getRankLabel(rank: CardRank): string {
@@ -93,6 +231,10 @@ export function getRankWord(rank: CardRank): string {
   }
 }
 
+export function getRankPlural(rank: CardRank): string {
+  return rank === 6 ? 'Sixes' : `${getRankWord(rank)}s`;
+}
+
 export function getSuitSymbol(suit: Suit): string {
   switch (suit) {
     case 'hearts': return '♥';
@@ -102,111 +244,190 @@ export function getSuitSymbol(suit: Suit): string {
   }
 }
 
+// Precomputed 5-card combination index tables for zero-allocation 6-card and 7-card evaluation
+const COMBOS_5_OF_6: readonly (readonly [number, number, number, number, number])[] = [
+  [0, 1, 2, 3, 4],
+  [0, 1, 2, 3, 5],
+  [0, 1, 2, 4, 5],
+  [0, 1, 3, 4, 5],
+  [0, 2, 3, 4, 5],
+  [1, 2, 3, 4, 5],
+];
+
+const COMBOS_5_OF_7: readonly (readonly [number, number, number, number, number])[] = [
+  [0, 1, 2, 3, 4],
+  [0, 1, 2, 3, 5],
+  [0, 1, 2, 3, 6],
+  [0, 1, 2, 4, 5],
+  [0, 1, 2, 4, 6],
+  [0, 1, 2, 5, 6],
+  [0, 1, 3, 4, 5],
+  [0, 1, 3, 4, 6],
+  [0, 1, 3, 5, 6],
+  [0, 1, 4, 5, 6],
+  [0, 2, 3, 4, 5],
+  [0, 2, 3, 4, 6],
+  [0, 2, 3, 5, 6],
+  [0, 2, 4, 5, 6],
+  [0, 3, 4, 5, 6],
+  [1, 2, 3, 4, 5],
+  [1, 2, 3, 4, 6],
+  [1, 2, 3, 5, 6],
+  [1, 2, 4, 5, 6],
+  [1, 3, 4, 5, 6],
+  [2, 3, 4, 5, 6],
+];
+
+/**
+ * Encodes up to 5 tie-breaker card ranks (each in 0..14) in Base-15.
+ * Max value is 14 * (15^4 + 15^3 + 15^2 + 15 + 1) = 759,374 < 1,000,000,
+ * guaranteeing zero category overflow and strictly monotonic lexicographic ordering.
+ */
+function encodeBase15(r0 = 0, r1 = 0, r2 = 0, r3 = 0, r4 = 0): number {
+  return (((r0 * 15 + r1) * 15 + r2) * 15 + r3) * 15 + r4;
+}
+
 /**
  * Evaluates best 5-card poker hand out of 5 to 7 cards.
  */
 export function evaluate7CardHand(cards: Card[]): HandEvaluation {
-  if (cards.length < 5) {
+  const len = cards.length;
+  if (len < 5) {
+    const sortedPartial = [...cards].sort((a, b) => b.rank - a.rank);
     return {
-      score: 0,
+      score: encodeBase15(
+        sortedPartial[0]?.rank ?? 0,
+        sortedPartial[1]?.rank ?? 0,
+        sortedPartial[2]?.rank ?? 0,
+        sortedPartial[3]?.rank ?? 0,
+        0
+      ),
       category: 'High Card',
       description: 'Incomplete hand',
-      bestCards: [...cards],
+      bestCards: sortedPartial,
     };
   }
 
-  // Generate all 5-card combinations
-  const combos: Card[][] = [];
-  function k_combinations(set: Card[], k: number, prefix: Card[] = []) {
-    if (prefix.length === k) {
-      combos.push(prefix);
+  if (len === 5) {
+    return evaluate5Cards(cards);
+  }
+
+  if (len === 6 || len === 7) {
+    const table = len === 7 ? COMBOS_5_OF_7 : COMBOS_5_OF_6;
+    let bestEval: HandEvaluation | null = null;
+    const tuple: Card[] = [cards[0], cards[1], cards[2], cards[3], cards[4]];
+    for (let i = 0; i < table.length; i++) {
+      const idx = table[i];
+      tuple[0] = cards[idx[0]];
+      tuple[1] = cards[idx[1]];
+      tuple[2] = cards[idx[2]];
+      tuple[3] = cards[idx[3]];
+      tuple[4] = cards[idx[4]];
+      const current = evaluate5Cards(tuple);
+      if (!bestEval || current.score > bestEval.score) {
+        bestEval = current;
+      }
+    }
+    return bestEval!;
+  }
+
+  // Fallback for > 7 cards
+  let bestEval: HandEvaluation | null = null;
+  function walk(start: number, picked: Card[]) {
+    if (picked.length === 5) {
+      const current = evaluate5Cards(picked);
+      if (!bestEval || current.score > bestEval.score) {
+        bestEval = current;
+      }
       return;
     }
-    for (let i = 0; i < set.length; i++) {
-      k_combinations(set.slice(i + 1), k, [...prefix, set[i]]);
+    for (let i = start; i <= cards.length - (5 - picked.length); i++) {
+      picked.push(cards[i]);
+      walk(i + 1, picked);
+      picked.pop();
     }
   }
-  k_combinations(cards, 5);
-
-  let bestEval: HandEvaluation | null = null;
-  for (const combo of combos) {
-    const current = evaluate5Cards(combo);
-    if (!bestEval || current.score > bestEval.score) {
-      bestEval = current;
-    }
-  }
-
+  walk(0, []);
   return bestEval!;
 }
 
 function evaluate5Cards(fiveCards: Card[]): HandEvaluation {
   const sorted = [...fiveCards].sort((a, b) => b.rank - a.rank);
-  const ranks = sorted.map((c) => c.rank);
-  const suits = sorted.map((c) => c.suit);
+  const r0 = sorted[0].rank;
+  const r1 = sorted[1].rank;
+  const r2 = sorted[2].rank;
+  const r3 = sorted[3].rank;
+  const r4 = sorted[4].rank;
+  const s0 = sorted[0].suit;
 
-  const isFlush = suits.every((s) => s === suits[0]);
+  const isFlush =
+    sorted[1].suit === s0 &&
+    sorted[2].suit === s0 &&
+    sorted[3].suit === s0 &&
+    sorted[4].suit === s0;
 
-  // Check straight
+  // Check straight (standard & A-5-4-3-2 wheel)
   let isStraight = false;
-  let straightHigh = 0;
+  let straightHigh: CardRank = r0;
+  let isWheel = false;
 
-  // Standard straight
-  if (
-    ranks[0] - ranks[1] === 1 &&
-    ranks[1] - ranks[2] === 1 &&
-    ranks[2] - ranks[3] === 1 &&
-    ranks[3] - ranks[4] === 1
-  ) {
+  if (r0 - r1 === 1 && r1 - r2 === 1 && r2 - r3 === 1 && r3 - r4 === 1) {
     isStraight = true;
-    straightHigh = ranks[0];
-  } else if (
-    // Wheel straight: A-5-4-3-2
-    ranks[0] === 14 &&
-    ranks[1] === 5 &&
-    ranks[2] === 4 &&
-    ranks[3] === 3 &&
-    ranks[4] === 2
-  ) {
+    straightHigh = r0;
+  } else if (r0 === 14 && r1 === 5 && r2 === 4 && r3 === 3 && r4 === 2) {
     isStraight = true;
-    straightHigh = 5; // In wheel straight, 5 is high
+    isWheel = true;
+    straightHigh = 5;
   }
-
-  // Count rank occurrences
-  const rankCounts: Record<number, number> = {};
-  for (const r of ranks) {
-    rankCounts[r] = (rankCounts[r] || 0) + 1;
-  }
-  const countEntries = Object.entries(rankCounts)
-    .map(([rankStr, count]) => ({ rank: Number(rankStr) as CardRank, count }))
-    .sort((a, b) => b.count - a.count || b.rank - a.rank);
 
   // 1. Royal Flush & Straight Flush
   if (isStraight && isFlush) {
+    const orderedStraightCards = isWheel
+      ? [sorted[1], sorted[2], sorted[3], sorted[4], sorted[0]]
+      : sorted;
     if (straightHigh === 14) {
       return {
         score: 9000000,
         category: 'Royal Flush',
-        description: `Royal Flush in ${suits[0]}`,
-        bestCards: sorted,
+        description: `Royal Flush in ${s0}`,
+        bestCards: orderedStraightCards,
       };
     }
     return {
-      score: 8000000 + straightHigh,
+      score: 8000000 + encodeBase15(straightHigh, 0, 0, 0, 0),
       category: 'Straight Flush',
-      description: `${getRankWord(straightHigh as CardRank)}-high Straight Flush`,
-      bestCards: sorted,
+      description: `${getRankWord(straightHigh)}-high Straight Flush`,
+      bestCards: orderedStraightCards,
     };
   }
+
+  // Count rank occurrences and group cards by multiplicity then rank
+  const rankCounts = new Map<CardRank, number>();
+  for (let i = 0; i < 5; i++) {
+    const rk = sorted[i].rank;
+    rankCounts.set(rk, (rankCounts.get(rk) || 0) + 1);
+  }
+
+  const countEntries = Array.from(rankCounts.entries())
+    .map(([rank, count]) => ({ rank, count }))
+    .sort((a, b) => b.count - a.count || b.rank - a.rank);
+
+  // Order bestCards by multiplicity first, then rank descending
+  const canonicalCards = [...sorted].sort((a, b) => {
+    const ca = rankCounts.get(a.rank)!;
+    const cb = rankCounts.get(b.rank)!;
+    return cb - ca || b.rank - a.rank;
+  });
 
   // 2. Four of a Kind
   if (countEntries[0].count === 4) {
     const quadRank = countEntries[0].rank;
     const kicker = countEntries[1].rank;
     return {
-      score: 7000000 + quadRank * 100 + kicker,
+      score: 7000000 + encodeBase15(quadRank, kicker, 0, 0, 0),
       category: 'Four of a Kind',
-      description: `Four of a Kind, ${getRankWord(quadRank)}s`,
-      bestCards: sorted,
+      description: `Four of a Kind, ${getRankPlural(quadRank)}`,
+      bestCards: canonicalCards,
     };
   }
 
@@ -215,31 +436,33 @@ function evaluate5Cards(fiveCards: Card[]): HandEvaluation {
     const trips = countEntries[0].rank;
     const pair = countEntries[1].rank;
     return {
-      score: 6000000 + trips * 100 + pair,
+      score: 6000000 + encodeBase15(trips, pair, 0, 0, 0),
       category: 'Full House',
-      description: `Full House, ${getRankWord(trips)}s full of ${getRankWord(pair)}s`,
-      bestCards: sorted,
+      description: `Full House, ${getRankPlural(trips)} full of ${getRankPlural(pair)}`,
+      bestCards: canonicalCards,
     };
   }
 
   // 4. Flush
   if (isFlush) {
-    const tieBreak = ranks[0] * 10000 + ranks[1] * 1000 + ranks[2] * 100 + ranks[3] * 10 + ranks[4];
     return {
-      score: 5000000 + tieBreak,
+      score: 5000000 + encodeBase15(r0, r1, r2, r3, r4),
       category: 'Flush',
-      description: `Flush, ${getRankWord(ranks[0])} high`,
+      description: `Flush, ${getRankWord(r0)} high`,
       bestCards: sorted,
     };
   }
 
   // 5. Straight
   if (isStraight) {
+    const orderedStraightCards = isWheel
+      ? [sorted[1], sorted[2], sorted[3], sorted[4], sorted[0]]
+      : sorted;
     return {
-      score: 4000000 + straightHigh,
+      score: 4000000 + encodeBase15(straightHigh, 0, 0, 0, 0),
       category: 'Straight',
-      description: `${getRankWord(straightHigh as CardRank)}-high Straight`,
-      bestCards: sorted,
+      description: `${getRankWord(straightHigh)}-high Straight`,
+      bestCards: orderedStraightCards,
     };
   }
 
@@ -249,23 +472,23 @@ function evaluate5Cards(fiveCards: Card[]): HandEvaluation {
     const kicker1 = countEntries[1].rank;
     const kicker2 = countEntries[2].rank;
     return {
-      score: 3000000 + trips * 10000 + kicker1 * 100 + kicker2,
+      score: 3000000 + encodeBase15(trips, kicker1, kicker2, 0, 0),
       category: 'Three of a Kind',
-      description: `Three of a Kind, ${getRankWord(trips)}s`,
-      bestCards: sorted,
+      description: `Three of a Kind, ${getRankPlural(trips)}`,
+      bestCards: canonicalCards,
     };
   }
 
   // 7. Two Pair
   if (countEntries[0].count === 2 && countEntries[1].count === 2) {
-    const highPair = Math.max(countEntries[0].rank, countEntries[1].rank);
-    const lowPair = Math.min(countEntries[0].rank, countEntries[1].rank);
+    const highPair = countEntries[0].rank;
+    const lowPair = countEntries[1].rank;
     const kicker = countEntries[2].rank;
     return {
-      score: 2000000 + highPair * 10000 + lowPair * 100 + kicker,
+      score: 2000000 + encodeBase15(highPair, lowPair, kicker, 0, 0),
       category: 'Two Pair',
-      description: `Two Pair, ${getRankWord(highPair as CardRank)}s and ${getRankWord(lowPair as CardRank)}s`,
-      bestCards: sorted,
+      description: `Two Pair, ${getRankPlural(highPair)} and ${getRankPlural(lowPair)}`,
+      bestCards: canonicalCards,
     };
   }
 
@@ -276,19 +499,18 @@ function evaluate5Cards(fiveCards: Card[]): HandEvaluation {
     const k2 = countEntries[2].rank;
     const k3 = countEntries[3].rank;
     return {
-      score: 1000000 + pair * 100000 + k1 * 1000 + k2 * 100 + k3,
+      score: 1000000 + encodeBase15(pair, k1, k2, k3, 0),
       category: 'One Pair',
-      description: `Pair of ${getRankWord(pair)}s`,
-      bestCards: sorted,
+      description: `Pair of ${getRankPlural(pair)}`,
+      bestCards: canonicalCards,
     };
   }
 
   // 9. High Card
-  const tieBreak = ranks[0] * 10000 + ranks[1] * 1000 + ranks[2] * 100 + ranks[3] * 10 + ranks[4];
   return {
-    score: tieBreak,
+    score: encodeBase15(r0, r1, r2, r3, r4),
     category: 'High Card',
-    description: `High Card, ${getRankWord(ranks[0])}`,
+    description: `High Card, ${getRankWord(r0)}`,
     bestCards: sorted,
   };
 }
@@ -300,7 +522,7 @@ export function calculateSidePots(players: PlayerState[]): SidePot[] {
   const contributors = players.filter((p) => p.totalHandBet > 0);
   if (contributors.length === 0) return [];
 
-  // Distinct contribution levels of non-folded players, plus max overall contribution
+  // Distinct contribution levels of non-folded players
   const liveLevels = Array.from(
     new Set(
       contributors
@@ -369,11 +591,15 @@ export function calculateSidePots(players: PlayerState[]): SidePot[] {
 
 /**
  * Adjudicates all pots (Main Pot + Side Pots) at showdown and returns WinnerInfo[] and total chip awards.
+ * Implements:
+ * - Uncalled overbet/shove return (returned to the bettor in chipAwards/payouts without creating a false WinnerInfo entry)
+ * - TDA Rule 20 odd-chip distribution (odd chips awarded clockwise starting immediately left of dealerSeat)
  */
 export function adjudicateShowdown(
   players: PlayerState[],
   communityCards: Card[],
-  fallbackTotalPot: number
+  fallbackTotalPot: number,
+  dealerSeat = 0
 ): {
   winners: WinnerInfo[];
   chipAwards: Record<string, number>;
@@ -387,10 +613,10 @@ export function adjudicateShowdown(
     handEvals.set(p.id, evaluate7CardHand([...p.cards, ...communityCards]));
   }
 
-  let sidePots = calculateSidePots(players);
-  const sumSidePots = sidePots.reduce((acc, s) => acc + s.amount, 0);
-  if (sidePots.length === 0 || sumSidePots === 0) {
-    sidePots = [
+  let rawSidePots = calculateSidePots(players);
+  const sumSidePots = rawSidePots.reduce((acc, s) => acc + s.amount, 0);
+  if (rawSidePots.length === 0 || sumSidePots === 0) {
+    rawSidePots = [
       {
         amount: fallbackTotalPot,
         eligiblePlayerIds: contenders.map((c) => c.id),
@@ -402,10 +628,27 @@ export function adjudicateShowdown(
   const chipAwards: Record<string, number> = {};
   const payouts = new Map<string, number>();
   const winnerMap = new Map<string, WinnerInfo>();
+  const contestedSidePots: SidePot[] = [];
+  const totalSeats = Math.max(players.length, 5);
 
-  for (const pot of sidePots) {
+  for (const pot of rawSidePots) {
     const eligible = contenders.filter((p) => pot.eligiblePlayerIds.includes(p.id));
     if (eligible.length === 0) continue;
+
+    // Uncalled bet slice above all other contenders: return chips directly without declaring a showdown pot win
+    if (eligible.length === 1 && rawSidePots.length > 1) {
+      const solePlayer = eligible[0];
+      chipAwards[solePlayer.id] = (chipAwards[solePlayer.id] || 0) + pot.amount;
+      payouts.set(solePlayer.id, (payouts.get(solePlayer.id) || 0) + pot.amount);
+      continue;
+    }
+
+    const potLabel =
+      contestedSidePots.length === 0 ? 'Main Pot' : `Side Pot #${contestedSidePots.length}`;
+    contestedSidePots.push({
+      ...pot,
+      label: potLabel,
+    });
 
     let bestScore = -1;
     for (const p of eligible) {
@@ -414,10 +657,17 @@ export function adjudicateShowdown(
     }
 
     const potWinners = eligible.filter((p) => handEvals.get(p.id)!.score === bestScore);
-    const share = Math.floor(pot.amount / potWinners.length);
-    let remainder = pot.amount - share * potWinners.length;
+    // Sort tied winners in clockwise order starting immediately left of dealerSeat (TDA Rule 20)
+    const clockwiseWinners = [...potWinners].sort((a, b) => {
+      const distA = (a.seatIndex - dealerSeat - 1 + totalSeats * 2) % totalSeats;
+      const distB = (b.seatIndex - dealerSeat - 1 + totalSeats * 2) % totalSeats;
+      return distA - distB;
+    });
 
-    for (const w of potWinners) {
+    const share = Math.floor(pot.amount / clockwiseWinners.length);
+    let remainder = pot.amount - share * clockwiseWinners.length;
+
+    for (const w of clockwiseWinners) {
       const extra = remainder > 0 ? 1 : 0;
       if (remainder > 0) remainder--;
       const award = share + extra;
@@ -428,14 +678,14 @@ export function adjudicateShowdown(
       const existing = winnerMap.get(w.id);
       if (existing) {
         existing.amount += award;
-        existing.potLabel = existing.potLabel ? `${existing.potLabel} & ${pot.label}` : pot.label;
+        existing.potLabel = existing.potLabel ? `${existing.potLabel} & ${potLabel}` : potLabel;
       } else {
         winnerMap.set(w.id, {
           playerId: w.id,
           playerName: w.name,
           amount: award,
           handName: evalInfo.description,
-          potLabel: pot.label,
+          potLabel,
           bestCards: evalInfo.bestCards,
         });
       }
@@ -446,12 +696,12 @@ export function adjudicateShowdown(
     winners: Array.from(winnerMap.values()),
     chipAwards,
     payouts,
-    sidePots,
+    sidePots: contestedSidePots.length > 0 ? contestedSidePots : rawSidePots,
   };
 }
 
 /**
- * AI Decision Maker based on Personality & Tournament Stack Pressure
+ * AI Decision Maker based on Personality, Position, Draw Outs, Pot Odds, SPR & Stack Pressure
  */
 export function getAIDecision(
   ai: PlayerState,
@@ -464,24 +714,38 @@ export function getAIDecision(
   const evalResult = myCards.length >= 5 ? evaluate7CardHand(myCards) : null;
   const handScore = evalResult ? evalResult.score : 0;
 
-  // Pre-flop pocket quality (0..1 scale)
+  // Calibrated 169-combo preflop quality (0..1 scale)
   let preflopStrength = 0.35;
   if (ai.cards.length === 2) {
-    const r1 = ai.cards[0].rank;
-    const r2 = ai.cards[1].rank;
-    const isPair = r1 === r2;
+    const highRank = Math.max(ai.cards[0].rank, ai.cards[1].rank) as CardRank;
+    const lowRank = Math.min(ai.cards[0].rank, ai.cards[1].rank) as CardRank;
+    const isPair = highRank === lowRank;
     const isSuited = ai.cards[0].suit === ai.cards[1].suit;
-    const highRank = Math.max(r1, r2);
-
-    if (isPair) {
-      preflopStrength = highRank >= 10 ? 0.95 : highRank >= 7 ? 0.8 : 0.65;
-    } else {
-      let score = (r1 + r2) / 28;
-      if (isSuited) score += 0.15;
-      if (Math.abs(r1 - r2) === 1) score += 0.1; // Connector
-      preflopStrength = Math.min(0.9, Math.max(0.2, score));
-    }
+    const comboEval = evaluateComboStrength(highRank, lowRank, isPair, isSuited);
+    preflopStrength = Math.min(1, Math.max(0.15, comboEval.score / 100));
   }
+
+  // Positional awareness (BTN/CO play wider; UTG/SB play tighter)
+  const relSeat = (ai.seatIndex - table.dealerSeat + 5) % 5;
+  const position =
+    relSeat === 0 ? 'BTN' : relSeat === 1 ? 'SB' : relSeat === 2 ? 'BB' : relSeat === 3 ? 'UTG' : 'CO';
+  const isLatePosition = position === 'BTN' || position === 'CO';
+  const posBonus = position === 'BTN' ? 0.08 : position === 'CO' ? 0.05 : position === 'UTG' ? -0.05 : 0;
+  const effectivePreflop = Math.min(1, Math.max(0, preflopStrength + posBonus));
+
+  // Postflop draw outs and pot odds
+  const drawOuts =
+    table.phase !== 'preflop' && ai.cards.length === 2
+      ? calculateOutsAndDraws(ai.cards, communityCards).totalOuts
+      : 0;
+  const potOddsNeeded = callAmount > 0 ? callAmount / Math.max(1, table.pot + callAmount) : 0;
+  const drawEquity =
+    table.phase === 'flop'
+      ? Math.min(0.65, (drawOuts * 4) / 100)
+      : table.phase === 'turn'
+      ? Math.min(0.45, (drawOuts * 2.2) / 100)
+      : 0;
+  const hasStrongDraw = drawOuts >= 8;
 
   // Helper to construct a legal raise or fallback to allin/call
   const makeRaiseOrCall = (desiredRaiseOverHigh: number): PlayerAction => {
@@ -500,81 +764,103 @@ export function getAIDecision(
     return { type: 'raise', amount: targetTotal };
   };
 
-  // Short-stack tournament push/fold pressure (< 8 big blinds)
+  // Short-stack tournament push/fold pressure (<= 8 big blinds)
   const mRatio = ai.chips / Math.max(1, table.bigBlind);
-  if (mRatio <= 6 && preflopStrength >= 0.65) {
+  if (mRatio <= 8 && effectivePreflop >= 0.62) {
     return { type: 'allin' };
   }
 
   const aiType = ai.aiType || 'station';
 
   switch (aiType) {
-    // Viktor (Shark): Aggressive, position-aware, bluffs weakness
+    // Viktor (Shark): Aggressive, position-aware, semi-bluffs strong draws & punishes weakness
     case 'shark': {
       if (table.phase === 'preflop') {
-        if (preflopStrength > 0.65) {
-          const raiseAmt = table.bigBlind * (2 + Math.floor(Math.random() * 2));
+        if (effectivePreflop >= 0.64 || (isLatePosition && callAmount <= table.bigBlind && effectivePreflop >= 0.52)) {
+          const raiseAmt = table.bigBlind * (2 + (isLatePosition ? 1 : 2));
           return makeRaiseOrCall(raiseAmt);
         }
-        if (callAmount > table.bigBlind * 4 && preflopStrength < 0.45) {
+        if (callAmount > table.bigBlind * 4 && effectivePreflop < 0.52) {
+          return { type: 'fold' };
+        }
+        if (callAmount > 0 && effectivePreflop < 0.38 && potOddsNeeded > 0.28) {
           return { type: 'fold' };
         }
         return isFreeToCheck ? { type: 'check' } : callAmount >= ai.chips ? { type: 'allin' } : { type: 'call' };
       } else {
         const isStrong = handScore >= 2000000; // Two pair+
         const isMonster = handScore >= 4000000; // Straight+
-        const randomBluff = Math.random() < 0.18;
+        const isTopPairPlus = handScore >= 1300000; // High One Pair+
+        const semiBluff = hasStrongDraw && isFreeToCheck && Math.random() < 0.55;
+        const positionalBluff = isLatePosition && isFreeToCheck && Math.random() < 0.24;
 
-        if (isMonster || randomBluff) {
-          return makeRaiseOrCall(Math.max(table.minRaise, Math.floor(table.pot * 0.7)));
+        if (isMonster || semiBluff) {
+          return makeRaiseOrCall(Math.max(table.minRaise, Math.floor(table.pot * 0.68)));
         }
-        if (isStrong) {
-          return makeRaiseOrCall(Math.max(table.minRaise, Math.floor(table.pot * 0.45)));
+        if (isStrong || (isTopPairPlus && isFreeToCheck) || positionalBluff) {
+          return makeRaiseOrCall(Math.max(table.minRaise, Math.floor(table.pot * 0.48)));
         }
-        if (callAmount > table.pot * 0.6 && handScore < 1000000) {
-          return isFreeToCheck ? { type: 'check' } : { type: 'fold' };
+        if (callAmount > 0 && handScore < 1000000 && drawEquity < potOddsNeeded && callAmount > table.pot * 0.45) {
+          return { type: 'fold' };
         }
         return isFreeToCheck ? { type: 'check' } : callAmount >= ai.chips ? { type: 'allin' } : { type: 'call' };
       }
     }
 
-    // Elena (Rock): Tight-passive, premium pairs & top hands
+    // Elena (Rock): Tight-solid, premium holdings & mathematically sound pot-odds calls
     case 'rock': {
       if (table.phase === 'preflop') {
-        if (preflopStrength < 0.55 && callAmount > 0) return { type: 'fold' };
-        if (preflopStrength >= 0.85) {
+        if (effectivePreflop < 0.55 && callAmount > 0) return { type: 'fold' };
+        if (effectivePreflop >= 0.8) {
           return makeRaiseOrCall(table.bigBlind * 2);
         }
         return isFreeToCheck ? { type: 'check' } : callAmount >= ai.chips ? { type: 'allin' } : { type: 'call' };
       } else {
-        if (handScore < 1000000 && callAmount > 0) return { type: 'fold' };
-        if (handScore >= 5000000) {
-          return makeRaiseOrCall(Math.floor(table.pot * 0.5));
+        if (handScore < 1000000 && drawEquity < potOddsNeeded && callAmount > 0) {
+          return { type: 'fold' };
+        }
+        if (handScore >= 3000000) {
+          return makeRaiseOrCall(Math.max(table.minRaise, Math.floor(table.pot * 0.55)));
         }
         return isFreeToCheck ? { type: 'check' } : callAmount >= ai.chips ? { type: 'allin' } : { type: 'call' };
       }
     }
 
-    // Marcus (Maniac): High variance, frequent raises and all-ins
+    // Marcus (Maniac): High variance, wide pressure, frequent raises and semi-bluff barrels
     case 'maniac': {
-      const willSpike = Math.random() < 0.38;
+      const alreadyRaisedStreet = table.currentHighBet > table.bigBlind * 2;
+      const willSpike =
+        !alreadyRaisedStreet &&
+        effectivePreflop >= 0.28 &&
+        Math.random() < (hasStrongDraw || isLatePosition ? 0.48 : 0.36);
       if (willSpike && ai.chips > callAmount) {
         if (Math.random() < 0.22 && ai.chips <= table.bigBlind * 20) {
           return { type: 'allin' };
         }
         return makeRaiseOrCall(table.bigBlind * (2 + Math.floor(Math.random() * 4)));
       }
-      if (callAmount > ai.chips * 0.8 && preflopStrength < 0.35 && handScore < 1000000) {
+      if (
+        table.phase !== 'preflop' &&
+        callAmount >= table.bigBlind * 3 &&
+        handScore < 1000000 &&
+        !hasStrongDraw
+      ) {
+        return { type: 'fold' };
+      }
+      if (callAmount > ai.chips * 0.8 && effectivePreflop < 0.35 && handScore < 1000000 && !hasStrongDraw) {
         return isFreeToCheck ? { type: 'check' } : { type: 'fold' };
       }
       return isFreeToCheck ? { type: 'check' } : callAmount >= ai.chips ? { type: 'allin' } : { type: 'call' };
     }
 
-    // Bao (Calling Station): Loves seeing flops and calling down
+    // Bao (Calling Station): Sticky with any pair or draw, loves seeing flops and calling down
     case 'station':
     default: {
-      if (callAmount > ai.chips * 0.65 && preflopStrength < 0.4 && handScore < 1000000) {
+      if (callAmount > ai.chips * 0.65 && effectivePreflop < 0.4 && handScore < 1000000 && drawOuts < 4) {
         return isFreeToCheck ? { type: 'check' } : { type: 'fold' };
+      }
+      if (handScore >= 4000000 && isFreeToCheck) {
+        return makeRaiseOrCall(Math.max(table.minRaise, Math.floor(table.pot * 0.5)));
       }
       return isFreeToCheck ? { type: 'check' } : callAmount >= ai.chips ? { type: 'allin' } : { type: 'call' };
     }
@@ -685,6 +971,12 @@ export const QUICK_EMOTES: QuickEmote[] = [
   },
 ];
 
+let lastBanterStreetKey = '';
+let routineBanterCountInStreet = 0;
+let bigRaiseBanterCountInStreet = 0;
+let lastBanterTimestamp = 0;
+let baoMonsterAnnouncedHandCount = -1;
+
 /**
  * Generates contextual AI table banter on turn actions (and cross-table teasing of Bao's phone habit)
  */
@@ -694,10 +986,63 @@ export function generateAITurnBanter(
   table: TableState,
   allPlayers: PlayerState[]
 ): ChatMessage | null {
-  // ~42% chance on normal actions, 85% on all-in or big raises
-  const isBigMove = action.type === 'allin' || action.type === 'raise' || action.type === 'bet';
-  const triggerChance = action.type === 'allin' ? 0.92 : isBigMove ? 0.65 : 0.35;
+  const streetKey = `${table.handCount}_${table.phase}`;
+  if (streetKey !== lastBanterStreetKey) {
+    lastBanterStreetKey = streetKey;
+    routineBanterCountInStreet = 0;
+    bigRaiseBanterCountInStreet = 0;
+  }
+
+  // Only treat a bet/raise as a highlight "big move" if it is >= 50% of the pot (postflop) or a 3-bet / >= 4.5x BB (preflop)
+  const targetStreetBet = action.amount ?? ai.currentBet;
+  const isBigBetOrRaise =
+    (action.type === 'raise' || action.type === 'bet') &&
+    (table.phase === 'preflop'
+      ? targetStreetBet >= table.bigBlind * 4.5 || targetStreetBet >= table.pot * 0.85
+      : targetStreetBet >= Math.max(table.bigBlind * 3, table.pot * 0.5));
+
+  const isBigMove = action.type === 'allin' || isBigBetOrRaise;
+
+  // Bao's "putting the phone down" voice line only triggers ONCE per hand on the first turn he puts his phone down
+  const isFirstBaoPhoneDownInHand =
+    ai.persona === 'heavy_phone' &&
+    ai.activeTell === 'phone_down_monster' &&
+    action.type !== 'fold' &&
+    baoMonsterAnnouncedHandCount !== table.handCount;
+
+  const now = Date.now();
+
+  if (!isBigMove && !isFirstBaoPhoneDownInHand) {
+    // Routine actions (check, call, fold, or small standard raises) have a strict per-street cooldown
+    if (routineBanterCountInStreet >= 1 || now - lastBanterTimestamp < 2500) {
+      return null;
+    }
+  } else if (action.type !== 'allin' && !isFirstBaoPhoneDownInHand) {
+    // Cap big-raise banter to 1 per street with a minimum 1.6s gap so raise wars don't stack voices
+    if (bigRaiseBanterCountInStreet >= 1 || now - lastBanterTimestamp < 1600) {
+      return null;
+    }
+  }
+
+  const triggerChance =
+    action.type === 'allin'
+      ? 0.92
+      : isFirstBaoPhoneDownInHand
+      ? 0.88
+      : isBigMove
+      ? 0.62
+      : 0.26;
   if (Math.random() > triggerChance) return null;
+
+  lastBanterTimestamp = now;
+  if (isFirstBaoPhoneDownInHand) {
+    baoMonsterAnnouncedHandCount = table.handCount;
+  }
+  if (!isBigMove && !isFirstBaoPhoneDownInHand) {
+    routineBanterCountInStreet += 1;
+  } else if (isBigBetOrRaise) {
+    bigRaiseBanterCountInStreet += 1;
+  }
 
   const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
   let text = '';
@@ -763,17 +1108,22 @@ export function generateAITurnBanter(
 
     case 'heavy_phone': {
       // Bao (Calling Station - Heavy Phone-Watcher)
-      if (!ai.isWatchingPhone || ai.activeTell === 'phone_down_monster') {
-        // Phone is DOWN on the table!
+      if (action.type === 'allin') {
+        text = pick([
+          'Hold my phone! All-in!',
+          'Pushing the whole stack. Hope I do not miss my stream!',
+        ]);
+      } else if (isFirstBaoPhoneDownInHand) {
+        // First turn in this hand after putting his phone DOWN on the table!
         text = pick([
           'Hold on, putting the phone down for this hand.',
           'Screen locked. You have my full attention now.',
           'Wait a second... look at these cards. I am in!',
         ]);
-      } else if (action.type === 'allin') {
+      } else if (ai.activeTell === 'phone_down_monster' && (action.type === 'raise' || action.type === 'bet')) {
         text = pick([
-          'Hold my phone! All-in!',
-          'Pushing the whole stack. Hope I do not miss my stream!',
+          'Phone is still face down, my friend. Raising!',
+          'No distractions on this pot—I am raising.',
         ]);
       } else if (action.type === 'call') {
         text = pick([

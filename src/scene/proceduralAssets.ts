@@ -264,7 +264,7 @@ function drawCasinoCardInterior(
     ctx.translate(px, py);
     if (inverted) ctx.rotate(Math.PI);
     ctx.fillStyle = color;
-    ctx.font = `bold ${size}px Georgia, "Plus Jakarta Sans", serif`;
+    ctx.font = `bold ${size}px Georgia, "Hanken Grotesk", serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(suitStr, 0, 0);
@@ -368,7 +368,7 @@ function drawCasinoCardInterior(
       ctx.font = 'bold 102px Georgia, serif';
       ctx.fillText(suitStr, -182, -95);
       ctx.fillStyle = '#5c3d08';
-      ctx.font = 'bold 32px "Cinzel", Georgia, serif';
+      ctx.font = 'bold 32px "Bodoni Moda", Georgia, serif';
       ctx.fillText(courtTitle, 0, 90);
       ctx.restore();
     }
@@ -383,7 +383,7 @@ function drawCasinoCardInterior(
     ctx.stroke();
 
     ctx.fillStyle = '#f3e5ab';
-    ctx.font = 'bold 98px "Cinzel", Georgia, serif';
+    ctx.font = 'bold 98px "Bodoni Moda", Georgia, serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(rankStr, cx, cy + 4);
@@ -539,14 +539,14 @@ export function getCardFrontTexture(card: Card): THREE.CanvasTexture {
     ctx.lineWidth = 3;
     ctx.font =
       rankStr === '10'
-        ? '900 124px "Plus Jakarta Sans", Georgia, sans-serif'
-        : '900 140px "Plus Jakarta Sans", Georgia, sans-serif';
+        ? '900 124px "Hanken Grotesk", Georgia, sans-serif'
+        : '900 140px "Hanken Grotesk", Georgia, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.strokeText(rankStr, 0, 0);
     ctx.fillText(rankStr, 0, 0);
 
-    ctx.font = 'bold 122px Georgia, "Plus Jakarta Sans", serif';
+    ctx.font = 'bold 122px Georgia, "Hanken Grotesk", serif';
     ctx.fillText(suitStr, 0, 120);
     ctx.restore();
   };
@@ -794,10 +794,10 @@ export function getChipTextures(denom: ChipDenomination): {
   fCtx.fillText('♛', cx, cy - 68);
 
   fCtx.fillStyle = denom === 100 ? '#f3e5ab' : textColor;
-  fCtx.font = 'bold 86px "Cinzel", "Plus Jakarta Sans", Georgia, serif';
+  fCtx.font = 'bold 86px "Bodoni Moda", Georgia, serif';
   fCtx.fillText(valueLabel, cx, cy - 2);
 
-  fCtx.font = 'bold 21px "Plus Jakarta Sans", sans-serif';
+  fCtx.font = 'bold 21px "Hanken Grotesk", sans-serif';
   fCtx.fillStyle = denom === 100 ? '#d4af37' : '#78530d';
   fCtx.fillText('MONTE-CARLO', cx, cy + 56);
 
@@ -1298,11 +1298,11 @@ export function getCasinoFeltTexture(): THREE.CanvasTexture {
   ctx.font = 'bold 26px serif';
   ctx.fillText('♛', cx, cy - 264);
 
-  ctx.font = 'bold 46px "Plus Jakarta Sans", serif';
+  ctx.font = 'bold 46px "Hanken Grotesk", serif';
   ctx.fillStyle = 'rgba(235, 201, 96, 0.36)';
   ctx.fillText('CASINO DE MONTE-CARLO', cx, cy - 208);
 
-  ctx.font = 'bold 22px "Plus Jakarta Sans", sans-serif';
+  ctx.font = 'bold 22px "Hanken Grotesk", sans-serif';
   ctx.fillStyle = 'rgba(229, 193, 88, 0.28)';
   ctx.fillText('SALON PRIVÉ • HIGH-STAKES NO-LIMIT HOLD’EM', cx, cy + 88);
 
@@ -1509,69 +1509,31 @@ export function drawAvatarPlaque(
     leftOffset = 104;
   }
 
-  // Player Name (Warm Ivory)
+  // Row 1 (y = 30): Player Name (left) + Physical Tell Badge (right)
   const nameStr = name.toUpperCase();
   ctx.fillStyle = eliminated || folded ? '#64748b' : '#f8fafc';
-  ctx.font = 'bold 22px "Cinzel", "Plus Jakarta Sans", Georgia, serif';
+  ctx.font = 'bold 21px "Bodoni Moda", Georgia, serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText(nameStr, leftOffset, 32);
-
-  // Position Badge (BTN / SB / BB / UTG / CO) right next to Player Name
-  if (positionLabel && !eliminated) {
-    const nameWidth = ctx.measureText(nameStr).width;
-    const badgeX = leftOffset + nameWidth + 10;
-    const badgeW = 44;
-    const badgeH = 22;
-    ctx.fillStyle = isDealer ? 'rgba(212, 175, 55, 0.28)' : 'rgba(30, 41, 59, 0.85)';
-    ctx.beginPath();
-    ctx.roundRect(badgeX, 21, badgeW, badgeH, 6);
-    ctx.fill();
-    ctx.lineWidth = 1.2;
-    ctx.strokeStyle = isDealer ? '#f3e5ab' : 'rgba(212, 175, 55, 0.45)';
-    ctx.stroke();
-
-    ctx.fillStyle = isDealer ? '#f3e5ab' : '#cbd5e1';
-    ctx.font = 'bold 12px "JetBrains Mono", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(positionLabel, badgeX + badgeW / 2, 32.5);
-  }
+  ctx.fillText(nameStr, leftOffset, 30);
 
   if (tellLabel && !eliminated) {
     ctx.fillStyle = isTurn ? '#f3e5ab' : '#94a3b8';
-    ctx.font = '600 13px "Plus Jakarta Sans", sans-serif';
+    ctx.font = '600 13px "Hanken Grotesk", sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText(tellLabel, isDealer ? w - 64 : w - 20, 32);
+    ctx.fillText(tellLabel, w - 20, 30);
   }
 
-  if (isDealer && !eliminated) {
-    ctx.fillStyle = '#d4af37';
-    ctx.beginPath();
-    ctx.arc(w - 34, 32, 15, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#090c12';
-    ctx.font = 'bold 16px "Cinzel", Georgia, serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('D', w - 34, 33);
-  }
-
-  // Stack Readout (Brushed Champagne Gold)
+  // Row 2 (y = 64): Stack Readout (left) + Action/Speech Pill (right)
   ctx.fillStyle = eliminated ? '#64748b' : '#d4af37';
   ctx.font = 'bold 24px "JetBrains Mono", monospace';
   ctx.textAlign = 'left';
-  ctx.fillText(eliminated ? 'OUT' : `$${chips.toLocaleString()}`, leftOffset, 72);
+  ctx.fillText(eliminated ? 'OUT' : `$${chips.toLocaleString()}`, leftOffset, 64);
 
-  // VPIP / PFR / AF Telemetry Sub-Row on 3D Plaque
-  if (hudStatsLabel && !eliminated) {
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '600 12px "JetBrains Mono", monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(hudStatsLabel, leftOffset, 105);
-  }
-
-  // Speech / Action Pill on right (Monochrome Obsidian + Champagne Gold)
-  const pillX = Math.max(leftOffset + 104, 212);
+  const pillX = Math.max(leftOffset + 108, 216);
   const pillW = w - pillX - 18;
+  const pillY = 46;
+  const pillH = 36;
   const displaySpeech = chatBubbleText ? `"${chatBubbleText}"` : actionText;
   ctx.fillStyle = isTurn
     ? 'rgba(212, 175, 55, 0.22)'
@@ -1579,7 +1541,7 @@ export function drawAvatarPlaque(
     ? 'rgba(15, 20, 28, 0.65)'
     : 'rgba(15, 20, 28, 0.92)';
   ctx.beginPath();
-  ctx.roundRect(pillX, 54, pillW, 42, 11);
+  ctx.roundRect(pillX, pillY, pillW, pillH, 10);
   ctx.fill();
 
   ctx.lineWidth = 1.5;
@@ -1592,13 +1554,43 @@ export function drawAvatarPlaque(
 
   ctx.fillStyle = folded ? '#94a3b8' : isTurn ? '#f3e5ab' : '#f8fafc';
   ctx.font = chatBubbleText
-    ? 'italic 600 14px "Plus Jakarta Sans", sans-serif'
-    : 'bold 17px "Plus Jakarta Sans", sans-serif';
+    ? 'italic 600 14px "Hanken Grotesk", sans-serif'
+    : 'bold 17px "Hanken Grotesk", sans-serif';
   ctx.textAlign = 'center';
   const maxChars = portraitImg ? 22 : 30;
   const truncated =
     displaySpeech.length > maxChars ? displaySpeech.slice(0, maxChars - 2) + '…"' : displaySpeech;
-  ctx.fillText(truncated, pillX + pillW / 2, 75);
+  ctx.fillText(truncated, pillX + pillW / 2, pillY + pillH / 2 + 1);
+
+  // Row 3 (y = 100): Position Pill (BTN•D / SB / BB / UTG / CO) + VPIP/PFR/AF HUD Telemetry
+  let statsLeftX = leftOffset;
+  const isBtnSeat = isDealer || positionLabel === 'BTN';
+  if ((positionLabel || isDealer) && !eliminated) {
+    const badgeText = isBtnSeat ? 'BTN•D' : positionLabel!;
+    const badgeW = isBtnSeat ? 54 : 42;
+    const badgeH = 20;
+    const badgeY = 90;
+    ctx.fillStyle = isBtnSeat ? '#f5b851' : 'rgba(30, 41, 59, 0.92)';
+    ctx.beginPath();
+    ctx.roundRect(leftOffset, badgeY, badgeW, badgeH, 6);
+    ctx.fill();
+    ctx.lineWidth = isBtnSeat ? 1.6 : 1.2;
+    ctx.strokeStyle = isBtnSeat ? '#fef08a' : 'rgba(212, 175, 55, 0.5)';
+    ctx.stroke();
+
+    ctx.fillStyle = isBtnSeat ? '#090c12' : '#e2e8f0';
+    ctx.font = 'bold 12px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(badgeText, leftOffset + badgeW / 2, badgeY + badgeH / 2 + 0.5);
+    statsLeftX = leftOffset + badgeW + 10;
+  }
+
+  if (hudStatsLabel && !eliminated) {
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '600 12.5px "JetBrains Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(hudStatsLabel, statsLeftX, 100.5);
+  }
 }
 
 /**
@@ -1686,7 +1678,7 @@ export function drawSpatialButton(
   ctx.stroke();
 
   ctx.fillStyle = disabled ? '#64748b' : variant === 'raise' ? '#f3e5ab' : '#f8fafc';
-  ctx.font = 'bold 26px "Cinzel", "Plus Jakarta Sans", serif';
+  ctx.font = 'bold 26px "Bodoni Moda", Georgia, serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(label.toUpperCase(), w / 2, sublabel ? h / 2 - 14 : h / 2);
@@ -1742,14 +1734,14 @@ export type CharacterModelRole = 'dealer' | 'viktor' | 'elena' | 'bao' | 'marcus
 export function createRealisticSkinMaterial(hexColor: string): THREE.MeshPhysicalMaterial {
   return new THREE.MeshPhysicalMaterial({
     color: hexColor,
-    roughness: 0.48,
-    metalness: 0.02,
-    sheen: 0.38,
-    sheenRoughness: 0.65,
+    roughness: 0.64,
+    metalness: 0.01,
+    sheen: 0.22,
+    sheenRoughness: 0.75,
     sheenColor: new THREE.Color('#f59e7a'),
-    clearcoat: 0.08,
-    clearcoatRoughness: 0.45,
-    reflectivity: 0.35,
+    clearcoat: 0.02,
+    clearcoatRoughness: 0.65,
+    reflectivity: 0.22,
   });
 }
 

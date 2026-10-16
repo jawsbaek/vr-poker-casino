@@ -18,7 +18,7 @@ body {
   padding: 0;
   overflow: hidden;
   background-color: #0b0f19;
-  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  font-family: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
   touch-action: none;
 }
 
@@ -32,9 +32,7 @@ body {
 }
 
 .gold-gradient-text {
-  background: linear-gradient(135deg, #fce8a2 0%, #d4af37 50%, #aa8014 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #e9c96a;
 }
 
 .gold-border {

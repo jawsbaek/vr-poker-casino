@@ -17,7 +17,14 @@ import {
   GTOSolverMode,
   PlayerHUDStats,
 } from '../types/poker';
-import { evaluate7CardHand, SUITS, RANKS, getSuitSymbol } from './pokerEngine';
+import {
+  evaluate7CardHand,
+  SUITS,
+  RANKS,
+  getSuitSymbol,
+  createSeededRNG,
+  hashStringSeed,
+} from './pokerEngine';
 
 // Canonical rank order from Ace (14) down to Two (2) for the 13x13 GTO Matrix
 export const MATRIX_RANKS: CardRank[] = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2];
@@ -266,6 +273,7 @@ export function calculateOutsAndDraws(
     }
   }
 
+  const currentCategoryTier = Math.floor(currentScore / 1000000);
   const maxBoardRank = Math.max(...communityCards.map((c) => c.rank));
   let flushOuts = 0;
   let straightOuts = 0;
@@ -275,6 +283,7 @@ export function calculateOutsAndDraws(
 
   for (const candidate of unseenCards) {
     const nextEval = evaluate7CardHand([...knownCards, candidate]);
+    const nextCategoryTier = Math.floor(nextEval.score / 1000000);
     // Ignore board-only improvements that don't use Hero's cards or merely pair the board without helping Hero
     const boardOnlyEval =
       communityCards.length >= 4 ? evaluate7CardHand([...communityCards, candidate]) : null;
@@ -282,7 +291,7 @@ export function calculateOutsAndDraws(
       continue;
     }
 
-    if (nextEval.score > currentScore + 800000) {
+    if (nextCategoryTier > currentCategoryTier) {
       if (nextEval.category === 'Flush' || nextEval.category === 'Straight Flush' || nextEval.category === 'Royal Flush') {
         flushOuts++;
         improvingCardIds.add(candidate.id);
@@ -319,15 +328,21 @@ export function calculateOutsAndDraws(
     }
   }
 
-  if (flushDrawSuit && flushOuts > 0) {
+  if (flushDrawSuit && flushOuts > 0 && straightOuts >= 3) {
     const sym = getSuitSymbol(flushDrawSuit as any);
-    drawLabels.push(`Flush Draw (${flushOuts} outs)`);
+    drawLabels.push(`Monster Combo Draw (${flushOuts + straightOuts} outs)`);
     keyOutCards.push(`Any ${sym} (${flushOuts})`);
-  }
-  if (straightOuts >= 6) {
-    drawLabels.push(`Open-Ended Straight Draw (${straightOuts} outs)`);
-  } else if (straightOuts >= 3) {
-    drawLabels.push(`Gutshot Straight Draw (${straightOuts} outs)`);
+  } else {
+    if (flushDrawSuit && flushOuts > 0) {
+      const sym = getSuitSymbol(flushDrawSuit as any);
+      drawLabels.push(`Flush Draw (${flushOuts} outs)`);
+      keyOutCards.push(`Any ${sym} (${flushOuts})`);
+    }
+    if (straightOuts >= 6) {
+      drawLabels.push(`Open-Ended Straight Draw (${straightOuts} outs)`);
+    } else if (straightOuts >= 3) {
+      drawLabels.push(`Gutshot Straight Draw (${straightOuts} outs)`);
+    }
   }
   if (tripsOrFullHouseOuts > 0) {
     drawLabels.push(
@@ -501,9 +516,10 @@ function findPrimaryVillain(
 }
 
 /**
- * Fast Monte Carlo Equity Simulator:
+ * Deterministic Seeded Monte Carlo Equity Simulator:
  * Computes both Pure GTO Equity (vs balanced positional range) and Node-Locked Exploit Equity
  * (adjusted for Villain's VPIP/PFR archetype and live 3D physical tells!).
+ * Uses a canonical state-derived Mulberry32 PRNG seed so identical game states yield stable, zero-jitter equity.
  */
 function runDualMonteCarloEquity(
   heroCards: Card[],
@@ -527,19 +543,37 @@ function runDualMonteCarloEquity(
     }
   }
 
+  // Build canonical deterministic seed from cards and range parameters
+  const stateKey = [
+    ...heroCards.map((c) => `${c.rank}${c.suit[0]}`),
+    '|',
+    ...communityCards.map((c) => `${c.rank}${c.suit[0]}`),
+    '|',
+    pureGtoRangeWidthPct,
+    exploitRangeWidthPct,
+    villainTell || 'none',
+    villainPersona || 'default',
+  ].join('_');
+  const rng = createSeededRNG(hashStringSeed(stateKey));
+
   const boardNeeded = Math.max(0, 5 - communityCards.length);
-  const iterations = 260;
+  const iterations = 400;
 
   let pureWins = 0;
   let pureTotalWeight = 0;
   let exploitWins = 0;
   let exploitTotalWeight = 0;
 
+  const simBoard: Card[] = new Array(5);
+  for (let b = 0; b < communityCards.length; b++) {
+    simBoard[b] = communityCards[b];
+  }
+
   for (let i = 0; i < iterations; i++) {
     // Partial Fisher-Yates shuffle for (2 villain hole cards + boardNeeded community cards)
     const sampleCount = 2 + boardNeeded;
     for (let j = 0; j < sampleCount; j++) {
-      const r = j + Math.floor(Math.random() * (remainingDeck.length - j));
+      const r = j + Math.floor(rng() * (remainingDeck.length - j));
       const tmp = remainingDeck[j];
       remainingDeck[j] = remainingDeck[r];
       remainingDeck[r] = tmp;
@@ -547,25 +581,27 @@ function runDualMonteCarloEquity(
 
     const v1 = remainingDeck[0];
     const v2 = remainingDeck[1];
-    const simBoard = [...communityCards];
     for (let b = 0; b < boardNeeded; b++) {
-      simBoard.push(remainingDeck[2 + b]);
+      simBoard[communityCards.length + b] = remainingDeck[2 + b];
     }
 
     const high = Math.max(v1.rank, v2.rank) as CardRank;
     const low = Math.min(v1.rank, v2.rank) as CardRank;
     const { percentile } = evaluateComboStrength(high, low, high === low, v1.suit === v2.suit);
 
-    const heroScore = evaluate7CardHand([...heroCards, ...simBoard]).score;
+    const heroScore = evaluate7CardHand([heroCards[0], heroCards[1], simBoard[0], simBoard[1], simBoard[2], simBoard[3], simBoard[4]]).score;
     const villainCurrentEval =
       communityCards.length >= 3 ? evaluate7CardHand([v1, v2, ...communityCards]) : null;
-    const villainFinalScore = evaluate7CardHand([v1, v2, ...simBoard]).score;
+    const villainFinalScore = evaluate7CardHand([v1, v2, simBoard[0], simBoard[1], simBoard[2], simBoard[3], simBoard[4]]).score;
 
     const resultShare =
       heroScore > villainFinalScore ? 1.0 : heroScore === villainFinalScore ? 0.5 : 0.0;
 
-    // 1. Pure GTO Weighting (strictly positional preflop range percentile)
-    const pureWeight = percentile <= pureGtoRangeWidthPct ? 1.0 : 0.15;
+    // 1. Pure GTO Weighting (strictly positional preflop range percentile + postflop board continuation weight)
+    let pureWeight = percentile <= pureGtoRangeWidthPct ? 1.0 : 0.12;
+    if (villainCurrentEval && villainCurrentEval.score >= 1000000 && percentile <= pureGtoRangeWidthPct + 12) {
+      pureWeight *= 1.25;
+    }
     pureWins += resultShare * pureWeight;
     pureTotalWeight += pureWeight;
 
@@ -587,7 +623,7 @@ function runDualMonteCarloEquity(
       exploitWeight = isNutted ? 9.0 : 0.06;
     } else if (villainTell === 'watch_glance_strong') {
       // Viktor glanced at watch = Top 15% strong range
-      const isStrong = (villainCurrentEval && villainCurrentEval.score >= 1500000) || percentile <= 15;
+      const isStrong = (villainCurrentEval && villainCurrentEval.score >= 1400000) || percentile <= 15;
       exploitWeight = isStrong ? 6.0 : 0.15;
     } else if (villainPersona === 'heavy_phone') {
       // Bao scrolling phone = wide calling station (58% range)
@@ -696,34 +732,28 @@ function buildRecommendation(params: {
   const bigRaiseCostBB = Math.max(callBB, (bigRaiseTotal - human.currentBet) / bb);
   const allinCostBB = human.chips / bb;
 
-  // EV Calculations in Big Blinds (relative to 0.00 BB for Fold)
+  // Exact Game-Theoretic EV Calculations in Big Blinds (relative to 0.00 BB for Fold):
+  // - EV(Call) = eq * potBB - (1 - eq) * callBB = eq * (potBB + callBB) - callBB
+  // - EV(Raise) = f * potBB + (1 - f) * [eq_called * (potBB + raiseOverBB) - (1 - eq_called) * raiseCostBB]
+  //   where raiseOverBB = raiseCostBB - callBB is the extra bet Villain matches when calling.
   const evFold = 0;
   const evCheckCall = isFreeToCheck
     ? Math.round(eq * potBB * 100) / 100
-    : Math.round((eq * (potBB + callBB) - (1 - eq) * callBB) * 100) / 100;
+    : Math.round((eq * potBB - (1 - eq) * callBB) * 100) / 100;
 
-  const evRaiseSmall =
-    Math.round(
-      (foldEquity * potBB +
-        (1 - foldEquity) * (eq * (potBB + smallRaiseCostBB * 2) - (1 - eq) * smallRaiseCostBB)) *
-        100
-    ) / 100;
+  const computeRaiseEV = (costBB: number, fe: number): number => {
+    const raiseOverBB = Math.max(0, costBB - callBB);
+    // Villain folds worse hands when facing a raise, slightly compressing conditional equity when called
+    const eqWhenCalled = Math.min(0.98, Math.max(0.02, eq * (1 - 0.12 * fe)));
+    const evWhenCalled = eqWhenCalled * (potBB + raiseOverBB) - (1 - eqWhenCalled) * costBB;
+    return Math.round((fe * potBB + (1 - fe) * evWhenCalled) * 100) / 100;
+  };
 
-  const evRaiseBig =
-    Math.round(
-      (Math.min(0.85, foldEquity * 1.22) * potBB +
-        (1 - Math.min(0.85, foldEquity * 1.22)) *
-          (eq * (potBB + bigRaiseCostBB * 2) - (1 - eq) * bigRaiseCostBB)) *
-        100
-    ) / 100;
-
+  const evRaiseSmall = computeRaiseEV(smallRaiseCostBB, foldEquity);
+  const bigFoldEq = Math.min(0.85, foldEquity * 1.22);
+  const evRaiseBig = computeRaiseEV(bigRaiseCostBB, bigFoldEq);
   const allinFoldEq = Math.min(0.88, foldEquity * 1.35);
-  const evAllin =
-    Math.round(
-      (allinFoldEq * potBB +
-        (1 - allinFoldEq) * (eq * (potBB + allinCostBB * 2) - (1 - eq) * allinCostBB)) *
-        100
-    ) / 100;
+  const evAllin = computeRaiseEV(allinCostBB, allinFoldEq);
 
   // Compute Action Frequencies (0..100%)
   let fold = 0;

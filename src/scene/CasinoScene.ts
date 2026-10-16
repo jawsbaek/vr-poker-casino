@@ -273,7 +273,7 @@ export class CasinoScene {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.18;
+    this.renderer.toneMappingExposure = 0.82;
     this.renderer.xr.enabled = true;
     container.appendChild(this.renderer.domElement);
 
@@ -282,6 +282,7 @@ export class CasinoScene {
     pmremGenerator.compileEquirectangularShader();
     const roomEnv = new RoomEnvironment();
     this.scene.environment = pmremGenerator.fromScene(roomEnv, 0.04).texture;
+    this.scene.environmentIntensity = 0.28;
     roomEnv.dispose();
     pmremGenerator.dispose();
 
@@ -295,7 +296,7 @@ export class CasinoScene {
         const envMap = hdrPmrem.fromEquirectangular(hdrTexture).texture;
         this.scene.environment = envMap;
         this.scene.environmentRotation = new THREE.Euler(0, Math.PI, 0);
-        this.scene.environmentIntensity = 0.65;
+        this.scene.environmentIntensity = 0.28;
         hdrTexture.dispose();
         hdrPmrem.dispose();
       },
@@ -429,15 +430,15 @@ export class CasinoScene {
   }
 
   private setupLighting() {
-    this.ambientLight = new THREE.AmbientLight('#ffe4b5', 0.38);
+    this.ambientLight = new THREE.AmbientLight('#ffe4b5', 0.32);
     this.scene.add(this.ambientLight);
 
-    // Warm overhead pendant downlight
-    this.pendantLight = new THREE.SpotLight('#fff1d0', 3.5);
+    // Warm overhead pendant downlight - calibrated to avoid washing out cards
+    this.pendantLight = new THREE.SpotLight('#fff3db', 2.05);
     this.pendantLight.position.set(0, 2.65, 0);
-    this.pendantLight.angle = Math.PI / 2.9;
-    this.pendantLight.penumbra = 0.85;
-    this.pendantLight.decay = 1.4;
+    this.pendantLight.angle = Math.PI / 3.0;
+    this.pendantLight.penumbra = 0.9;
+    this.pendantLight.decay = 1.6;
     this.pendantLight.distance = 7;
     this.pendantLight.castShadow = true;
     this.pendantLight.shadow.mapSize.width = 2048;
@@ -445,13 +446,13 @@ export class CasinoScene {
     this.pendantLight.shadow.bias = -0.0001;
     this.scene.add(this.pendantLight);
 
-    // Center board accent light (intensifies during All-In Runout & Showdown)
-    this.boardPointLight = new THREE.PointLight('#fde047', 0.35, 2.5);
-    this.boardPointLight.position.set(0, 1.35, -0.04);
+    // Center board subtle accent light (gently lifts felt without blinding card faces)
+    this.boardPointLight = new THREE.PointLight('#fde68a', 0.16, 2.4, 2.0);
+    this.boardPointLight.position.set(0, 1.45, -0.04);
     this.scene.add(this.boardPointLight);
 
-    // Active Turn Spotlight
-    this.activeSpotlight = new THREE.SpotLight('#fde047', 1.65, 4.5, Math.PI / 6.5, 0.85, 1.2);
+    // Active Turn Spotlight - focused, soft warm glow without intense felt blowout
+    this.activeSpotlight = new THREE.SpotLight('#fef08a', 1.05, 4.5, Math.PI / 6.5, 0.9, 1.4);
     this.activeSpotlight.position.set(0, 2.2, 0.68);
     this.activeSpotlight.target.position.set(0, 0.75, 0.68);
     this.scene.add(this.activeSpotlight);
@@ -596,8 +597,8 @@ export class CasinoScene {
     canvasMesh.position.z = 0.035;
     artGroup.add(canvasMesh);
 
-    // Warm bar & mural accent light illuminating the crystal decanters & gold frame behind the dealer
-    const credenzaLight = new THREE.PointLight('#ffd89b', 1.35, 3.4);
+    // Warm bar & mural accent light illuminating the crystal decanters & gold frame behind the dealer (softened VIP ambiance)
+    const credenzaLight = new THREE.PointLight('#ffd89b', 0.65, 3.0, 1.8);
     credenzaLight.position.set(0, -0.58, 0.55);
     artGroup.add(credenzaLight);
 
@@ -653,10 +654,10 @@ export class CasinoScene {
     const feltMat = new THREE.MeshStandardMaterial({
       map: feltTexture,
       normalMap: fabricNor,
-      normalScale: new THREE.Vector2(0.28, 0.28),
+      normalScale: new THREE.Vector2(0.24, 0.24),
       roughnessMap: fabricRough,
-      roughness: 0.86,
-      metalness: 0.03,
+      roughness: 0.94,
+      metalness: 0.0,
     });
 
     const woodMat = new THREE.MeshPhysicalMaterial({
@@ -956,8 +957,8 @@ export class CasinoScene {
 
     this.scene.add(dealerGroup);
 
-    // Dedicated VIP Dealer Studio Key/Fill Light (illuminates sculpted facial features, hazel irises, 18K gold jewelry & satin peak lapels)
-    const dealerStudioLight = new THREE.PointLight('#fff4e6', 1.45, 1.75, 1.6);
+    // Dedicated VIP Dealer Studio Key/Fill Light (soft warm fill keeping natural facial contouring without plaster washout)
+    const dealerStudioLight = new THREE.PointLight('#fff4e6', 0.42, 1.6, 2.0);
     dealerStudioLight.position.set(0.05, 0.70, 0.44);
     dealerStudioLight.castShadow = false;
     dealerGroup.add(dealerStudioLight);
@@ -981,7 +982,15 @@ export class CasinoScene {
                 if (hasColorAttr) {
                   m.vertexColors = true;
                 }
-                if (m.name.includes('Eye')) {
+                const matName = m.name.toLowerCase();
+                if (matName.includes('skin')) {
+                  m.roughness = Math.max(m.roughness, 0.62);
+                  m.metalness = Math.min(m.metalness, 0.02);
+                  if (m instanceof THREE.MeshPhysicalMaterial) {
+                    m.clearcoat = 0.04;
+                    m.clearcoatRoughness = 0.6;
+                  }
+                } else if (matName.includes('eye')) {
                   m.roughness = 0.02;
                   if (m instanceof THREE.MeshPhysicalMaterial) {
                     m.clearcoat = 1.0;
@@ -1247,8 +1256,8 @@ export class CasinoScene {
 
         rightArmGroup.add(phoneHandGroup);
 
-        // Cyan-blue smartphone screen light illuminating Bao's face & chest
-        phoneGlowLight = new THREE.PointLight('#38bdf8', 1.15, 0.75);
+        // Subtle smartphone screen soft glow illuminating Bao's face gently without washout
+        phoneGlowLight = new THREE.PointLight('#38bdf8', 0.45, 0.65, 2.0);
         phoneGlowLight.position.set(0, 0.42, 0.26);
         torsoGroup.add(phoneGlowLight);
 
@@ -1289,16 +1298,31 @@ export class CasinoScene {
       plaqueCanvas.width = 460;
       plaqueCanvas.height = 132;
       const plaqueTexture = new THREE.CanvasTexture(plaqueCanvas);
-      plaqueTexture.anisotropy = 4;
+      plaqueTexture.anisotropy = 8;
 
-      const plaqueGeo = new THREE.PlaneGeometry(0.38, 0.11);
+      const isSideRimSeat = seatIdx === 1 || seatIdx === 4;
+      const plaqueGeo = new THREE.PlaneGeometry(
+        isSideRimSeat ? 0.34 : 0.38,
+        isSideRimSeat ? 0.098 : 0.11
+      );
       const plaqueMat = new THREE.MeshBasicMaterial({
         map: plaqueTexture,
         transparent: true,
         side: THREE.DoubleSide,
       });
       const plaqueMesh = new THREE.Mesh(plaqueGeo, plaqueMat);
-      plaqueMesh.position.set(0, 0.16, 0.25);
+      if (isSideRimSeat) {
+        // Pull Seat #1 (Viktor, left rim) and Seat #4 (Marcus, right rim) plaques
+        // inward toward the center of the table so they remain 100% inside the 16:10
+        // (1280x800) viewport in seat0_pov without overlapping Seat #2/#3 or felt cards.
+        avatarGroup.updateMatrixWorld(true);
+        const sideSign = seatIdx === 1 ? -1 : 1;
+        const targetWorldPos = new THREE.Vector3(sideSign * 0.86, 0.89, 0.15);
+        avatarGroup.worldToLocal(targetWorldPos);
+        plaqueMesh.position.copy(targetWorldPos);
+      } else {
+        plaqueMesh.position.set(0, 0.16, 0.25);
+      }
       avatarGroup.add(plaqueMesh);
 
       // Preload 2D Nano Banana character portrait for the 3D Plaque medallion
@@ -1338,9 +1362,9 @@ export class CasinoScene {
       this.avatarPlaques.set(seatIdx, plaqueRefObj);
     }
 
-    // Add subtle warm facial key lights for each AI seat so subsurface skin sheen and cornea catchlights read clearly
+    // Add subtle warm facial fill lights for each AI seat so skin tones remain rich and organic without glare
     this.avatarPlaques.forEach((plaqueRef) => {
-      const seatKeyLight = new THREE.PointLight('#fff4e6', 0.85, 1.35, 1.6);
+      const seatKeyLight = new THREE.PointLight('#fff4e6', 0.32, 1.25, 2.0);
       seatKeyLight.position.set(0.04, 0.64, 0.36);
       seatKeyLight.castShadow = false;
       plaqueRef.avatarGroup.add(seatKeyLight);
@@ -1365,7 +1389,16 @@ export class CasinoScene {
                 if (hasColorAttr) {
                   m.vertexColors = true;
                 }
-                if (m.name.includes('Eye')) {
+                const matName = m.name.toLowerCase();
+                if (matName.includes('skin')) {
+                  // Eliminate chalky white specular blowout on faces and hands
+                  m.roughness = Math.max(m.roughness, 0.62);
+                  m.metalness = Math.min(m.metalness, 0.02);
+                  if (m instanceof THREE.MeshPhysicalMaterial) {
+                    m.clearcoat = 0.04;
+                    m.clearcoatRoughness = 0.6;
+                  }
+                } else if (matName.includes('eye')) {
                   m.roughness = 0.02;
                   if (m instanceof THREE.MeshPhysicalMaterial) {
                     m.clearcoat = 1.0;
@@ -1896,7 +1929,7 @@ export class CasinoScene {
           plaqueRef.phoneRailMesh.visible = !watching && !p.eliminated;
         }
         if (plaqueRef.phoneGlowLight) {
-          plaqueRef.phoneGlowLight.intensity = watching ? 1.25 : 0;
+          plaqueRef.phoneGlowLight.intensity = watching ? 0.45 : 0;
         }
       }
 
@@ -2009,13 +2042,14 @@ export class CasinoScene {
       metalness: 0.02,
     });
     const topMaterial = new THREE.MeshPhysicalMaterial({
-      color: '#e5dfd3',
+      color: 0xdfd9cc,
       map: frontTexture,
       normalMap: linenNormal,
-      normalScale: new THREE.Vector2(0.08, 0.08),
-      roughness: 0.88,
+      normalScale: new THREE.Vector2(0.06, 0.06),
+      roughness: 0.90,
       metalness: 0.0,
       clearcoat: 0.0,
+      clearcoatRoughness: 0.8,
       envMapIntensity: 0.08,
     });
     const bottomMaterial = new THREE.MeshPhysicalMaterial({
@@ -2079,6 +2113,7 @@ export class CasinoScene {
         group.rotation.set(0, 0, Math.PI);
         this.scene.add(group);
 
+        const staggerDelay = Math.min(0.32, (card.dealOrder ?? idx) * 0.045);
         this.cardMeshes.set(card.id, {
           mesh: group,
           frontMat,
@@ -2087,7 +2122,7 @@ export class CasinoScene {
           targetPosition: new THREE.Vector3(basePos.x, isWinner ? basePos.y + 0.028 : basePos.y, basePos.z),
           targetRotation: new THREE.Euler(0, 0, 0), // Flip face up
           isWinningCard: isWinner,
-          spawnTime: now,
+          spawnTime: now + staggerDelay,
           arcHeight: 0.12,
         });
         pokerAudio.playCardSlide();
@@ -2109,12 +2144,12 @@ export class CasinoScene {
         const isWinner = winningCardIds.has(card.id);
         const offsetMultiplier = cardIdx === 0 ? -0.048 : 0.048;
 
-        // If player folded, slide their cards toward the center muck!
+        // If player folded, slide their cards toward the center muck with a slight discarded rotation
         const targetPos = player.folded
-          ? new THREE.Vector3(seatPos.x * 0.35 + offsetMultiplier * 0.5, 0.761, seatPos.z * 0.35 - 0.15)
+          ? new THREE.Vector3(seatPos.x * 0.32 + offsetMultiplier * 0.4, 0.761, seatPos.z * 0.32 - 0.16)
           : new THREE.Vector3(
               seatPos.x + offsetMultiplier,
-              (isWinner ? 0.79 : 0.763) + cardIdx * 0.001,
+              (isWinner ? 0.795 : 0.763) + cardIdx * 0.001,
               seatPos.z
             );
 
@@ -2123,10 +2158,12 @@ export class CasinoScene {
           !player.folded &&
           (card.faceUp ||
             table.isAllInRunout ||
-            (table.phase === 'showdown' && !player.folded));
+            table.phase === 'showdown');
         const faceRoll = shouldShowFace ? 0 : Math.PI;
-        // Subtle +/- 1.2 degree natural yaw variance on dealt hole cards
-        const cardYaw = ((player.seatIndex * 7 + cardIdx * 13) % 5 - 2) * 0.0105;
+        // Subtle +/- 1.2 degree natural yaw variance on dealt hole cards, or natural tilt when folded in muck
+        const cardYaw = player.folded
+          ? ((player.seatIndex * 11 + cardIdx * 19) % 7 - 3) * 0.04
+          : ((player.seatIndex * 7 + cardIdx * 13) % 5 - 2) * 0.0105;
 
         if (!this.cardMeshes.has(card.id)) {
           const { group, frontMat } = this.createCardMesh(card);
@@ -2137,6 +2174,7 @@ export class CasinoScene {
           group.rotation.set(0, 0, Math.PI);
           this.scene.add(group);
 
+          const staggerDelay = Math.min(0.32, (card.dealOrder ?? (cardIdx * 5 + player.seatIndex)) * 0.032);
           this.cardMeshes.set(card.id, {
             mesh: group,
             frontMat,
@@ -2145,7 +2183,7 @@ export class CasinoScene {
             targetPosition: targetPos,
             targetRotation: new THREE.Euler(0, cardYaw, faceRoll),
             isWinningCard: isWinner,
-            spawnTime: now,
+            spawnTime: now + staggerDelay,
             arcHeight: 0.16,
           });
           pokerAudio.playCardSlide();
@@ -2721,12 +2759,12 @@ export class CasinoScene {
         this.controls.update();
       }
 
-      // 2b. Dynamic All-In Runout & Showdown Spotlight Choreography
+      // 2b. Dynamic All-In Runout & Showdown Spotlight Choreography (calibrated VIP salon levels)
       if (this.ambientLight && this.pendantLight && this.boardPointLight && this.activeSpotlight) {
         const isAllIn = Boolean(this.latestTable?.isAllInRunout);
         const isShowdown = this.latestTable?.phase === 'showdown';
-        const targetAmbient = isAllIn ? 0.30 : isShowdown ? 0.34 : 0.38;
-        const targetBoard = isAllIn ? 0.38 : isShowdown ? 0.32 : 0.22;
+        const targetAmbient = isAllIn ? 0.28 : isShowdown ? 0.30 : 0.32;
+        const targetBoard = isAllIn ? 0.22 : isShowdown ? 0.18 : 0.12;
         this.ambientLight.intensity = THREE.MathUtils.lerp(this.ambientLight.intensity, targetAmbient, 0.08);
         this.boardPointLight.intensity = THREE.MathUtils.lerp(this.boardPointLight.intensity, targetBoard, 0.08);
 
@@ -2761,7 +2799,13 @@ export class CasinoScene {
       this.cardMeshes.forEach((ref, cardId) => {
         const isHumanCard = humanCardIds.has(cardId);
         const dealAge = elapsed - ref.spawnTime;
-        const dealDuration = 0.42;
+        const dealDuration = 0.38;
+
+        if (dealAge < 0) {
+          ref.mesh.position.copy(ref.startPosition);
+          ref.mesh.rotation.set(0, 0, Math.PI);
+          return;
+        }
 
         if (dealAge >= 0 && dealAge < dealDuration) {
           const t = THREE.MathUtils.clamp(dealAge / dealDuration, 0, 1);
@@ -2787,20 +2831,22 @@ export class CasinoScene {
         } else {
           const hoverLift = isHumanCard && this.isHoleCardsHovered ? 0.014 : 0;
           const floatOffset = (ref.isWinningCard ? Math.sin(elapsed * 4.5) * 0.006 : 0) + hoverLift;
-          ref.mesh.position.x = THREE.MathUtils.lerp(ref.mesh.position.x, ref.targetPosition.x, 0.14);
+          const posLerp = 0.18;
+          const rotLerp = 0.18;
+          ref.mesh.position.x = THREE.MathUtils.lerp(ref.mesh.position.x, ref.targetPosition.x, posLerp);
           ref.mesh.position.y = THREE.MathUtils.lerp(
             ref.mesh.position.y,
             ref.targetPosition.y + floatOffset,
-            0.14
+            posLerp
           );
-          ref.mesh.position.z = THREE.MathUtils.lerp(ref.mesh.position.z, ref.targetPosition.z, 0.14);
+          ref.mesh.position.z = THREE.MathUtils.lerp(ref.mesh.position.z, ref.targetPosition.z, posLerp);
           ref.mesh.rotation.x = THREE.MathUtils.lerp(
             ref.mesh.rotation.x,
             hoverLift > 0 ? -0.14 : ref.targetRotation.x,
-            0.14
+            rotLerp
           );
-          ref.mesh.rotation.y = THREE.MathUtils.lerp(ref.mesh.rotation.y, ref.targetRotation.y, 0.14);
-          ref.mesh.rotation.z = THREE.MathUtils.lerp(ref.mesh.rotation.z, ref.targetRotation.z, 0.14);
+          ref.mesh.rotation.y = THREE.MathUtils.lerp(ref.mesh.rotation.y, ref.targetRotation.y, rotLerp);
+          ref.mesh.rotation.z = THREE.MathUtils.lerp(ref.mesh.rotation.z, ref.targetRotation.z, rotLerp);
         }
       });
 
@@ -3383,7 +3429,12 @@ export class CasinoScene {
     this.avatarPlaques.forEach((p, seatIdx) => {
       const worldCenter = new THREE.Vector3();
       p.mesh.getWorldPosition(worldCenter);
-      const rect = projectMeshPlaneToRect(p.mesh, 0.20, 0.085);
+      const isSideRimSeat = seatIdx === 1 || seatIdx === 4;
+      const rect = projectMeshPlaneToRect(
+        p.mesh,
+        isSideRimSeat ? 0.17 : 0.19,
+        isSideRimSeat ? 0.049 : 0.055
+      );
       const inFrustum =
         frustum.containsPoint(worldCenter) &&
         rect.left >= 0 &&
