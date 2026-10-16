@@ -973,6 +973,7 @@ for v in m_hair.data.vertices:
         quiff = max(0.0, min(1.0, (-0.02 - v.co.y) / 0.09)) * max(0.0, min(1.0, (v.co.z - 1.74) / 0.06))
         v.co.z += 0.022 * quiff
         v.co.y -= 0.006 * quiff
+fit_hair_outside_scalp(m_hair, m_head, clearance=0.0038)
 for p in m_hair.data.polygons: p.use_smooth = True
 m_hair.data.materials.clear()
 m_hair.data.materials.append(make_solid_mat("MarcusChestnutHair", (0.14, 0.07, 0.038), roughness=0.38))
@@ -1174,7 +1175,7 @@ def split_male_character_into_4_parts(prefix, head_obj, eye_l, eye_r, hair_obj, 
         bm_sub.free()
         return cp
 
-    def poly_arm_side(poly_idx):
+    def poly_arm_weights(poly_idx):
         poly = top_obj.data.polygons[poly_idx]
         w_r = 0.0
         w_l = 0.0
@@ -1186,20 +1187,20 @@ def split_male_character_into_4_parts(prefix, head_obj, eye_l, eye_r, hair_obj, 
                     w_l += g.weight
         w_r /= len(poly.vertices)
         w_l /= len(poly.vertices)
-        # Note: dealing shoe on Dealer is at x > 0.15, y < -0.20, keep it on Torso!
         c = poly.center
         if c.y < -0.20 and c.z < 1.15:
-            return "TORSO"
-        if w_r >= 0.42:
-            return "LEFT_ARM"   # X < 0
-        if w_l >= 0.42:
-            return "RIGHT_ARM"  # X > 0
-        return "TORSO"
+            return (0.0, 0.0)
+        return (w_r, w_l)
 
-    poly_sides = [poly_arm_side(i) for i in range(len(top_obj.data.polygons))]
-    top_torso = extract_poly_subset(top_obj, lambda i, f: poly_sides[i] == "TORSO", f"{prefix}_TopTorso")
-    top_l_arm = extract_poly_subset(top_obj, lambda i, f: poly_sides[i] == "LEFT_ARM", f"{prefix}_TopLArm")
-    top_r_arm = extract_poly_subset(top_obj, lambda i, f: poly_sides[i] == "RIGHT_ARM", f"{prefix}_TopRArm")
+    poly_wl = [poly_arm_weights(i) for i in range(len(top_obj.data.polygons))]
+    top_torso = extract_poly_subset(top_obj, lambda i, f: poly_wl[i][0] < 0.56 and poly_wl[i][1] < 0.56, f"{prefix}_TopTorso")
+    top_l_arm = extract_poly_subset(top_obj, lambda i, f: poly_wl[i][0] >= 0.36, f"{prefix}_TopLArm")
+    top_r_arm = extract_poly_subset(top_obj, lambda i, f: poly_wl[i][1] >= 0.36, f"{prefix}_TopRArm")
+    # Gently tuck the overlap cuff on top_torso inward by 1.8mm so rotated arms glide smoothly over the shoulder socket without z-fighting or gaps
+    for v in top_torso.data.vertices:
+        if abs(v.co.x) > 0.135 and v.co.z > 1.32:
+            v.co -= v.normal * 0.0018
+    top_torso.data.update()
     bpy.data.objects.remove(top_obj, do_unlink=True)
 
     # Partition hands_obj into LeftArm (x < 0) and RightArm (x >= 0)

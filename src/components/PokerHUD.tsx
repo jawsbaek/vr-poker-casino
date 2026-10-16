@@ -22,7 +22,6 @@ import {
   Bot,
   Layers,
   Sliders,
-  ShieldCheck,
 } from 'lucide-react';
 import {
   PlayerState,
@@ -39,8 +38,6 @@ import {
   HandDecisionRecord,
   CameraPresetId,
   DogfoodScenarioId,
-  SpatialAuditReport,
-  HudUiAuditReport,
   ActiveDrawerId,
   Suit,
 } from '../types/poker';
@@ -126,10 +123,6 @@ interface PokerHUDProps {
   onToggle2DHUD: () => void;
   debugOverlayEnabled: boolean;
   onToggleDebugOverlay: () => void;
-  spatialAudit: SpatialAuditReport | null;
-  onRunSpatialAudit: () => void;
-  hudUiAudit: HudUiAuditReport | null;
-  onRunHudUiAudit: () => void;
 }
 
 const CAMERA_PRESETS: { id: CameraPresetId; label: string; short: string }[] = [
@@ -193,10 +186,6 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
   onToggle2DHUD,
   debugOverlayEnabled,
   onToggleDebugOverlay,
-  spatialAudit,
-  onRunSpatialAudit,
-  hudUiAudit,
-  onRunHudUiAudit,
 }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [musicEnabled, setMusicEnabled] = useState(true);
@@ -205,7 +194,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
   const [fourColorDeck, setFourColorDeck] = useState<boolean>(true);
   const [showInBB, setShowInBB] = useState<boolean>(false);
 
-  // HUD-R4: Single active drawer mutex ('none' | 'gto' | 'settings' | 'inspector' | 'xr')
+  // HUD-R4: Single active drawer mutex ('none' | 'gto' | 'settings' | 'xr')
   const [activeDrawer, setActiveDrawer] = useState<ActiveDrawerId>('none');
   const [showBanterPopover, setShowBanterPopover] = useState(false);
 
@@ -222,12 +211,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
 
   const toggleDrawer = (drawer: Exclude<ActiveDrawerId, 'none'>) => {
     setActiveDrawer((prev) => {
-      const next = prev === drawer ? 'none' : drawer;
-      if (next === 'inspector') {
-        onRunSpatialAudit();
-        window.setTimeout(() => onRunHudUiAudit(), 40);
-      }
-      return next;
+      return prev === drawer ? 'none' : drawer;
     });
   };
 
@@ -706,30 +690,6 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
             <span className="hidden sm:inline">Table &amp; Cam</span>
           </button>
 
-          {/* 4. HUD/UI Rules Harness & 3D Spatial Inspector Drawer Trigger */}
-          <button
-            data-testid="hud-inspector-trigger"
-            onClick={() => toggleDrawer('inspector')}
-            className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition ${
-              activeDrawer === 'inspector'
-                ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-200'
-                : 'border-slate-700/80 bg-slate-900/90 text-slate-200 hover:border-emerald-400/40'
-            }`}
-          >
-            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-            <span className="hidden sm:inline">HUD Harness</span>
-            {hudUiAudit && (
-              <span
-                className={`rounded px-1 text-[10px] font-black ${
-                  hudUiAudit.allPassed
-                    ? 'bg-emerald-500/20 text-emerald-300'
-                    : 'bg-rose-500/20 text-rose-300'
-                }`}
-              >
-                {hudUiAudit.checks.filter((c) => c.passed).length}/{hudUiAudit.checks.length}
-              </span>
-            )}
-          </button>
         </div>
       </header>
 
@@ -1032,193 +992,6 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
               </div>
             </div>
           )}
-        </aside>
-      )}
-
-      {activeDrawer === 'inspector' && (
-        <aside
-          data-hud-drawer="inspector"
-          className="pointer-events-auto fixed top-16 right-3 z-30 max-h-[calc(100vh-11rem)] w-[410px] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-2xl border border-emerald-500/40 bg-slate-950/95 p-4 text-xs text-slate-200 shadow-2xl backdrop-blur-2xl"
-        >
-          <div className="mb-3 flex items-center justify-between border-b border-slate-800 pb-2">
-            <div className="flex items-center gap-2 font-black tracking-wider text-emerald-400 uppercase">
-              <ShieldCheck className="h-4 w-4" />
-              <span>HUD/UI Rules &amp; 3D Spatial Harness</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => {
-                  onRunSpatialAudit();
-                  onRunHudUiAudit();
-                }}
-                className="flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-1 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/30"
-              >
-                <RefreshCw className="h-3 w-3" /> Re-Audit
-              </button>
-              <button
-                onClick={() => setActiveDrawer('none')}
-                className="rounded-lg px-2 py-0.5 text-slate-400 hover:bg-slate-800 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-
-          {/* Section 1: 6 Formal HUD & UI Rules Verification Harness */}
-          <div className="mb-3 rounded-xl border border-emerald-500/30 bg-slate-900/80 p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-[11px] font-black tracking-wider text-emerald-300 uppercase">
-                HUD &amp; UI Rules Harness (HUD-R1 .. R6)
-              </span>
-              <span
-                className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
-                  hudUiAudit?.allPassed
-                    ? 'bg-emerald-500/20 text-emerald-300'
-                    : 'bg-rose-500/20 text-rose-300'
-                }`}
-              >
-                {hudUiAudit?.allPassed ? '6/6 RULES PASS' : 'CHECK FAILED'}
-              </span>
-            </div>
-
-            {hudUiAudit && (
-              <>
-                <div className="mb-2 grid grid-cols-3 gap-1.5 text-center text-[10px]">
-                  <div className="rounded-lg bg-slate-950/90 p-1.5">
-                    <div className="text-slate-400">HUD Coverage</div>
-                    <div className="font-black text-emerald-300">
-                      {hudUiAudit.hudViewportCoveragePct}% (&le;20%)
-                    </div>
-                  </div>
-                  <div className="rounded-lg bg-slate-950/90 p-1.5">
-                    <div className="text-slate-400">Visible Controls</div>
-                    <div className="font-black text-cyan-300">
-                      {hudUiAudit.visibleInteractiveCount} (&le;12)
-                    </div>
-                  </div>
-                  <div className="rounded-lg bg-slate-950/90 p-1.5">
-                    <div className="text-slate-400">Open Drawers</div>
-                    <div className="font-black text-amber-300">
-                      {hudUiAudit.openDrawerCount}/1 Mutex
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  {hudUiAudit.checks.map((check) => (
-                    <div
-                      key={check.id}
-                      className="flex items-start gap-2 rounded-lg border border-slate-800/90 bg-slate-950/75 p-2"
-                    >
-                      {check.passed ? (
-                        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                      ) : (
-                        <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-400" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="font-bold text-slate-200">{check.label}</span>
-                        </div>
-                        <div className="text-[10px] text-slate-400">{check.metric}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Section 2: 3D Spatial & Geometry Audit (10 Checks) */}
-          <div className="mb-3 rounded-xl border border-cyan-500/30 bg-slate-900/80 p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-[11px] font-black tracking-wider text-cyan-300 uppercase">
-                3D Spatial &amp; Rim Audit ({drawCalls} Draw Calls)
-              </span>
-              <span
-                className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
-                  spatialAudit?.allPassed
-                    ? 'bg-emerald-500/20 text-emerald-300'
-                    : 'bg-rose-500/20 text-rose-300'
-                }`}
-              >
-                {spatialAudit
-                  ? `${spatialAudit.checks.filter((c) => c.passed).length}/${spatialAudit.checks.length} PASS`
-                  : 'PENDING'}
-              </span>
-            </div>
-            <div className="max-h-36 space-y-1 overflow-y-auto pr-1">
-              {spatialAudit?.checks.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center justify-between rounded bg-slate-950/80 px-2 py-1 text-[10px]"
-                >
-                  <span className="truncate font-semibold text-slate-300">{c.label}</span>
-                  <span className={c.passed ? 'font-bold text-emerald-400' : 'font-bold text-rose-400'}>
-                    {c.passed ? 'PASS' : 'FAIL'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Section 3: Deterministic 3D Scenarios & Auto-Pilot Controls */}
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-400 uppercase">
-              Deterministic Scenarios &amp; Bot
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={onToggleDebugOverlay}
-                className={`rounded-lg border px-2 py-0.5 text-[10px] font-bold ${
-                  debugOverlayEnabled
-                    ? 'border-amber-400 bg-amber-500/20 text-amber-200'
-                    : 'border-slate-700 bg-slate-900 text-slate-400'
-                }`}
-              >
-                3D Colliders
-              </button>
-              <button
-                onClick={onToggleAutoPilot}
-                className={`flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-bold ${
-                  isAutoPilot
-                    ? 'border-emerald-400 bg-emerald-500/20 text-emerald-200'
-                    : 'border-slate-700 bg-slate-900 text-slate-400'
-                }`}
-              >
-                <Bot className="h-3 w-3" /> {isAutoPilot ? 'Bot ON' : 'Bot OFF'}
-              </button>
-              {([1, 2, 5] as const).map((spd) => (
-                <button
-                  key={spd}
-                  onClick={() => onChangeSpeedMultiplier(spd)}
-                  className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                    speedMultiplier === spd
-                      ? 'bg-cyan-500/30 text-cyan-200'
-                      : 'bg-slate-900 text-slate-500'
-                  }`}
-                >
-                  {spd}x
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-1.5">
-            {DOGFOOD_SCENARIOS.map((sc) => (
-              <button
-                key={sc.id}
-                onClick={() => onLoadScenario(sc.id)}
-                className={`rounded-xl border px-2.5 py-1.5 text-left transition ${
-                  activeScenario === sc.id
-                    ? 'border-emerald-400/60 bg-emerald-500/15 text-emerald-200'
-                    : 'border-slate-800 bg-slate-900/80 text-slate-300 hover:border-slate-700'
-                }`}
-              >
-                <div className="text-[11px] font-bold">{sc.label}</div>
-                <div className="truncate text-[10px] text-slate-400">{sc.desc}</div>
-              </button>
-            ))}
-          </div>
         </aside>
       )}
 

@@ -2357,10 +2357,6 @@ export const App: React.FC = () => {
         }
         debugOverlayEnabled={debugOverlayEnabled}
         onToggleDebugOverlay={handleToggleDebugOverlay}
-        spatialAudit={spatialAudit}
-        onRunSpatialAudit={handleRefreshSpatialAudit}
-        hudUiAudit={hudUiAudit}
-        onRunHudUiAudit={handleRefreshHudUiAudit}
       />
     </div>
   );

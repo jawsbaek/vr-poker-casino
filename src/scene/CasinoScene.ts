@@ -223,7 +223,21 @@ export class CasinoScene {
     new THREE.Vector3(0.28, 0.763, -0.06),
   ];
 
-  public static readonly BETTING_RING_CENTER = new THREE.Vector3(0, 0.763, 0.43);
+  public static readonly BETTING_RING_CENTER = new THREE.Vector3(0, 0.763, 0.37);
+
+  /**
+   * Computes the on-felt hole card center directly in front of each player's seat inside the
+   * inner emerald speed-cloth felt boundary (rx = 1.03, rz = 0.6798) along the player's radial line of sight.
+   */
+  public static getSeatHoleCardCenter(seatIndex: number): THREE.Vector3 {
+    if (seatIndex === 0) {
+      return new THREE.Vector3(0, 0.763, 0.56);
+    }
+    const pos = CasinoScene.SEAT_POSITIONS[seatIndex] || CasinoScene.SEAT_POSITIONS[0];
+    const feltNorm = Math.hypot(pos.x / 1.03, pos.z / 0.6798);
+    const radialScale = 0.78 / feltNorm;
+    return new THREE.Vector3(pos.x * radialScale, 0.763, pos.z * radialScale);
+  }
 
   /**
    * Computes an avatar standing/sitting position strictly outside the elliptical leather armrest
@@ -1023,23 +1037,19 @@ export class CasinoScene {
 
         if (torsoNode) {
           dealerTorsoGroup.clear();
-          torsoNode.position.set(0, 0, 0);
           dealerTorsoGroup.add(torsoNode);
         }
         if (headNode) {
           headGroup.clear();
-          headNode.position.set(0, 0, 0);
           headGroup.add(headNode);
           headGroup.userData.hasRealisticFacialRig = true;
         }
         if (leftArmNode) {
           leftArm.clear();
-          leftArmNode.position.set(0, 0, 0);
           leftArm.add(leftArmNode);
         }
         if (rightArmNode) {
           rightArm.clear();
-          rightArmNode.position.set(0, 0, 0);
           rightArm.add(rightArmNode);
         }
       },
@@ -1241,8 +1251,8 @@ export class CasinoScene {
 
       if (seatIdx === 3) {
         phoneHandGroup = new THREE.Group();
-        phoneHandGroup.position.set(-0.05, -0.16, 0.15);
-        phoneHandGroup.rotation.set(-0.42, 0.18, 0);
+        phoneHandGroup.position.set(-0.055, -0.295, 0.285);
+        phoneHandGroup.rotation.set(-0.52, 0.18, 0);
 
         const caseGeo = new THREE.BoxGeometry(0.064, 0.122, 0.01);
         const caseMat = new THREE.MeshStandardMaterial({
@@ -1302,7 +1312,7 @@ export class CasinoScene {
         opacity: 0.15,
       });
       const ring = new THREE.Mesh(ringGeo, ringMat);
-      ring.position.y = 0.01;
+      ring.position.y = -0.74;
       avatarGroup.add(ring);
 
       // 3D Status & Action Plaque docked low on the front rail (y = 0.16m, z = 0.25m)
@@ -1443,22 +1453,18 @@ export class CasinoScene {
 
           if (torsoNode) {
             slots.torsoMeshSlot.clear();
-            torsoNode.position.set(0, 0, 0);
             slots.torsoMeshSlot.add(torsoNode);
           }
           if (headNode) {
             slots.headMeshSlot.clear();
-            headNode.position.set(0, 0, 0);
             slots.headMeshSlot.add(headNode);
           }
           if (leftArmNode) {
             slots.leftArmMeshSlot.clear();
-            leftArmNode.position.set(0, 0, 0);
             slots.leftArmMeshSlot.add(leftArmNode);
           }
           if (rightArmNode) {
             slots.rightArmMeshSlot.clear();
-            rightArmNode.position.set(0, 0, 0);
             slots.rightArmMeshSlot.add(rightArmNode);
           }
         });
@@ -1704,7 +1710,7 @@ export class CasinoScene {
     // 4. Invisible Raycast Collider for Seat #0's Hole Cards (for pinch-peeking and flick-to-fold)
     const cardHitGeo = new THREE.BoxGeometry(0.22, 0.04, 0.15);
     this.holeCardHitMesh = new THREE.Mesh(cardHitGeo, invisibleMat);
-    this.holeCardHitMesh.position.set(0, 0.77, 0.62);
+    this.holeCardHitMesh.position.set(0, 0.77, 0.56);
     this.holeCardHitMesh.userData = { type: 'hole_cards' };
     this.scene.add(this.holeCardHitMesh);
 
@@ -1759,8 +1765,8 @@ export class CasinoScene {
       });
       const mesh = new THREE.Mesh(badgeGeo, mat);
       // Place slightly inward of the street bet chip stack, tilted gently upward for legibility
-      const badgeX = seatIdx === 0 ? 0.16 : seatPos.x * 0.56;
-      const badgeZ = seatIdx === 0 ? 0.44 : seatPos.z * 0.56 + 0.05;
+      const badgeX = seatIdx === 0 ? 0.16 : seatPos.x * 0.42;
+      const badgeZ = seatIdx === 0 ? 0.35 : seatPos.z * 0.42 + 0.04;
       mesh.position.set(badgeX, 0.774, badgeZ);
       mesh.rotation.x = -Math.PI / 2.6;
       mesh.visible = false;
@@ -1905,10 +1911,19 @@ export class CasinoScene {
   public updateAvatars(players: PlayerState[], dealerSeat: number = 0) {
     this.latestPlayers = players;
 
-    // Move dealer button to current dealer seat
+    // Move dealer button to current dealer seat (beside the player's hole cards on the felt)
     if (CasinoScene.SEAT_POSITIONS[dealerSeat]) {
       const dPos = CasinoScene.SEAT_POSITIONS[dealerSeat];
-      this.dealerButtonTarget.set(dPos.x * 0.78 + 0.11, 0.766, dPos.z * 0.78);
+      const holeCenter = CasinoScene.getSeatHoleCardCenter(dealerSeat);
+      const seatYaw = Math.atan2(dPos.x, dPos.z);
+      const rightX = Math.cos(seatYaw);
+      const rightZ = -Math.sin(seatYaw);
+      const sideSign = dealerSeat === 2 || dealerSeat === 4 ? -1 : 1;
+      this.dealerButtonTarget.set(
+        holeCenter.x * 0.92 + rightX * 0.145 * sideSign,
+        0.766,
+        holeCenter.z * 0.92 + rightZ * 0.145 * sideSign
+      );
     }
 
     const activeSeats = players
@@ -2165,17 +2180,28 @@ export class CasinoScene {
       if (player.eliminated) return;
       const seatPos = CasinoScene.SEAT_POSITIONS[player.seatIndex];
 
+      // Physical seat orientation: angle from table center to seat position
+      const seatAngle = Math.atan2(seatPos.x, seatPos.z);
+      // Tangential unit vector perpendicular to the radial direction toward the seat
+      // so cards are positioned side-by-side relative to the player's chest
+      const tangentX = Math.cos(seatAngle);
+      const tangentZ = -Math.sin(seatAngle);
+
       player.cards.forEach((card, cardIdx) => {
         const isWinner = winningCardIds.has(card.id);
         const offsetMultiplier = cardIdx === 0 ? -0.048 : 0.048;
 
         // If player folded, slide their cards toward the center muck with a slight discarded rotation
         const targetPos = player.folded
-          ? new THREE.Vector3(seatPos.x * 0.32 + offsetMultiplier * 0.4, 0.761, seatPos.z * 0.32 - 0.16)
+          ? new THREE.Vector3(
+              seatPos.x * 0.32 + tangentX * offsetMultiplier * 0.4,
+              0.761,
+              seatPos.z * 0.32 + tangentZ * offsetMultiplier * 0.4 - 0.16
+            )
           : new THREE.Vector3(
-              seatPos.x + offsetMultiplier,
+              seatPos.x + tangentX * offsetMultiplier,
               (isWinner ? 0.795 : 0.763) + cardIdx * 0.001,
-              seatPos.z
+              seatPos.z + tangentZ * offsetMultiplier
             );
 
         // Cards are dealt facedown (Math.PI) unless explicitly flipped (all-in runout, showdown, or Peek Lock)
@@ -2185,10 +2211,12 @@ export class CasinoScene {
             table.isAllInRunout ||
             table.phase === 'showdown');
         const faceRoll = shouldShowFace ? 0 : Math.PI;
-        // Subtle +/- 1.2 degree natural yaw variance on dealt hole cards, or natural tilt when folded in muck
+        // Cards face toward the seated player, with subtle natural yaw jitter or folded muck angle
+        const microJitter = ((player.seatIndex * 7 + cardIdx * 13) % 5 - 2) * 0.0105;
+        const foldJitter = ((player.seatIndex * 11 + cardIdx * 19) % 7 - 3) * 0.04;
         const cardYaw = player.folded
-          ? ((player.seatIndex * 11 + cardIdx * 19) % 7 - 3) * 0.04
-          : ((player.seatIndex * 7 + cardIdx * 13) % 5 - 2) * 0.0105;
+          ? seatAngle * 0.5 + foldJitter
+          : seatAngle + microJitter;
 
         if (!this.cardMeshes.has(card.id)) {
           const { group, frontMat } = this.createCardMesh(card);
@@ -2838,6 +2866,8 @@ export class CasinoScene {
           const parabolaY = Math.sin(easeT * Math.PI) * ref.arcHeight;
           ref.mesh.position.lerpVectors(ref.startPosition, ref.targetPosition, easeT);
           ref.mesh.position.y += parabolaY;
+          ref.mesh.rotation.x = THREE.MathUtils.lerp(0, ref.targetRotation.x, easeT);
+          ref.mesh.rotation.y = THREE.MathUtils.lerp(0, ref.targetRotation.y, easeT);
           ref.mesh.rotation.z = THREE.MathUtils.lerp(Math.PI, ref.targetRotation.z, easeT);
           return;
         }
@@ -3047,11 +3077,11 @@ export class CasinoScene {
 
         // Bao's Smartphone Holding & Left-Hand Scrolling Motion when watching phone
         if (seatIdx === 3 && plaqueRef.isWatchingPhone) {
-          const scrollSwipe = Math.sin(elapsed * 5.8) * 0.05;
-          rightArmPos.set(0.195, 0.37, 0.02);
-          rightArmRotX = -0.28;
-          leftArmPos.set(-0.185, 0.37 + scrollSwipe * 0.1, 0.03);
-          leftArmRotX = -0.32 + scrollSwipe;
+          const scrollSwipe = Math.sin(elapsed * 5.8) * 0.04;
+          rightArmPos.set(baseShoulderX, 0.36, -0.01);
+          rightArmRotX = -0.15;
+          leftArmPos.set(-baseShoulderX, 0.36, -0.01);
+          leftArmRotX = -0.18 + scrollSwipe;
         }
 
         // Marcus's Chip Fidget Bluff Tell

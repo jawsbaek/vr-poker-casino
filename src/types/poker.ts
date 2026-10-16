@@ -377,7 +377,7 @@ export interface SpatialAuditReport {
 // HUD & UI DESIGN RULES + VERIFICATION HARNESS TYPES
 // ============================================================================
 
-export type ActiveDrawerId = 'none' | 'gto' | 'settings' | 'inspector' | 'xr';
+export type ActiveDrawerId = 'none' | 'gto' | 'settings' | 'xr';
 
 export interface ScreenBoundingRect {
   left: number;

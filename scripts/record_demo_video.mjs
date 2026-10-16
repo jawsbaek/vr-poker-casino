@@ -1,12 +1,15 @@
 /**
- * Automated Demo Video Generator for Monte Carlo VIP 3D/WebXR Poker Hackathon Submission
+ * Automated Live-Playthrough Demo Video Generator for Monte Carlo VIP 3D/WebXR Poker
  *
- * Produces a 1920x1080 H.264 MP4 (`demo_video.mp4`) with full synchronized 48kHz stereo audio:
- * - Procedural Monte Carlo Lounge Jazz (0-36s) & High-Stakes Tension (36-74s) soundtrack
- * - Physical Casino Foley SFX (riffle shuffle, card slide/flip, clay chip clinks, burn taps,
- *   Bao's tinny smartphone reel audio leak, and Royal Flush win fanfare)
+ * Produces a 1920x1080 H.264 MP4 (`demo_video.mp4`) showcasing a continuous, realistic
+ * interactive playthrough from the Title Screen ("Take Your Seat") through Preflop, Flop,
+ * Turn, Dramatic All-In River Runout, Showdown, and Next Hand:
+ * - Visible animated cursor + golden click ripples showing real player UI interactions
+ * - Procedural Monte Carlo Lounge Jazz & High-Stakes Tension soundtrack
+ * - Physical Casino Foley SFX (riffle shuffle, 2-pass clockwise deal, card peel, clay chip clinks,
+ *   burn taps, Bao's tinny smartphone reel audio leak, and Royal Flush win fanfare)
  * - Multi-Persona Spoken English Voice Lines (VIP Croupier, Viktor, Elena, Bao, Marcus)
- * - Broadcast-style Bilingual (EN + KR) Subtitle & Active Speaker Overlay
+ * - Broadcast-style Bilingual Subtitle & Active Speaker Overlay
  */
 
 import { chromium } from 'playwright-core';
@@ -97,7 +100,8 @@ function buildMasterAudioWav(totalDurationSec, timelineEvents, voiceClips) {
       let sample = 0;
       if (type === 'sine') sample = Math.sin(phase);
       else if (type === 'triangle') sample = (2 / Math.PI) * Math.asin(Math.sin(phase));
-      else if (type === 'sawtooth') sample = 2 * ((phase / (2 * Math.PI)) - Math.floor(0.5 + phase / (2 * Math.PI)));
+      else if (type === 'sawtooth')
+        sample = 2 * (phase / (2 * Math.PI) - Math.floor(0.5 + phase / (2 * Math.PI)));
       else if (type === 'square') sample = Math.sin(phase) >= 0 ? 0.8 : -0.8;
 
       const env = Math.min(1, i / (0.01 * SAMPLE_RATE)) * Math.exp(-3.8 * t);
@@ -180,6 +184,7 @@ function buildMasterAudioWav(totalDurationSec, timelineEvents, voiceClips) {
   // Determine voice active intervals so background music ducks cleanly under dialogue
   const voiceIntervals = [];
   for (const vc of voiceClips) {
+    if (!vc.samples || typeof vc.startSec !== 'number') continue;
     const dur = vc.samples.length / SAMPLE_RATE;
     voiceIntervals.push({ start: vc.startSec, end: vc.startSec + dur });
     addMono(vc.startSec, vc.samples, vc.gainL ?? 0.92, vc.gainR ?? 0.92);
@@ -188,8 +193,8 @@ function buildMasterAudioWav(totalDurationSec, timelineEvents, voiceClips) {
   const isVoiceSpeakingAt = (sec) =>
     voiceIntervals.some((iv) => sec >= iv.start - 0.12 && sec <= iv.end + 0.18);
 
-  // 1. Continuous Soundtrack: Lounge Jazz (before tensionStartSec) -> High-Stakes Tension
-  const tensionStartSec = timelineEvents.scene5Start || 36.0;
+  // 1. Continuous Soundtrack: Lounge Jazz (before Flop monster tell) -> High-Stakes Tension
+  const tensionStartSec = timelineEvents.flopDealt || 26.0;
   const jazzChords = [
     [261.63, 329.63, 392.0, 493.88], // Cmaj7
     [220.0, 261.63, 329.63, 392.0], // Am7
@@ -232,58 +237,73 @@ function buildMasterAudioWav(totalDurationSec, timelineEvents, voiceClips) {
     }
   }
 
-  // 2. Choreographed Foley SFX across each scene
-  playGlassClink(1.2);
-  playRiffleShuffle((timelineEvents.scene1PlayClick || 4.0) + 0.1);
-  playChipClink((timelineEvents.scene1PlayClick || 4.0) + 0.45, 3);
+  // 2. Choreographed Foley SFX synchronized to live playthrough timestamps
+  playGlassClink(1.0);
+  const entrySec = timelineEvents.enterTableClick || 3.5;
+  playRiffleShuffle(entrySec + 0.1);
+  playChipClink(entrySec + 0.4, 2);
+  // 2-pass clockwise deal slides (10 cards)
+  for (let i = 0; i < 10; i++) {
+    playCardSlide(entrySec + 0.6 + i * 0.09, ((i % 5) - 2) * 0.25);
+  }
 
-  // Scene 2: Preflop Deal & Card Peel
-  const s2 = timelineEvents.scene2Start || 8.0;
-  playCardSlide(s2 + 0.2, -0.3);
-  playCardSlide(s2 + 0.42, 0.3);
-  playCardFlip(s2 + 1.1);
-  playChipClink(s2 + 2.4, 3, -0.4);
+  // Preflop Bao phone reel leak & player peek/raise
+  const baoScrollSec = timelineEvents.baoPreflopScroll || 8.0;
+  playPhoneReelLeak(baoScrollSec + 0.2);
+  playPhoneReelLeak(baoScrollSec + 1.4);
+  playChipClink(baoScrollSec + 1.8, 2, 0.3);
 
-  // Scene 3: Chip Staging & Rim Cast
-  const s3 = timelineEvents.scene3Start || 17.0;
-  playChipClink(s3 + 0.3, 4, 0);
-  playCardSlide(s3 + 1.5, 0.2);
-  playGlassClink(s3 + 3.2);
-  playChipClink(s3 + 4.8, 3, 0.4);
+  const peekSec = timelineEvents.heroPeekClick || 13.0;
+  playCardFlip(peekSec + 0.1);
+  playChipClink((timelineEvents.heroPreflopRaise || 18.0) + 0.1, 4, 0);
 
-  // Scene 4: Bao Phone Scroll (with tinny smartphone reel audio leaks!)
-  const s4 = timelineEvents.scene4Start || 26.0;
-  playPhoneReelLeak(s4 + 0.35);
-  playPhoneReelLeak(s4 + 1.8);
-  playPhoneReelLeak(s4 + 5.2);
-  playChipClink(s4 + 4.2, 2, 0.35);
+  // Flop deal & Bao putting phone flat on rail
+  const flopSec = timelineEvents.flopDealt || 24.0;
+  playBurnTap(flopSec + 0.1);
+  playCardFlip(flopSec + 0.35);
+  playCardSlide(flopSec + 0.45, -0.2);
+  playCardSlide(flopSec + 0.58, 0.0);
+  playCardSlide(flopSec + 0.71, 0.2);
+  playKnock(flopSec + 1.2); // Bao puts phone flat on the rail
 
-  // Scene 5: Bao Phone Down Monster Tell
-  const s5 = timelineEvents.scene5Start || 36.0;
-  playKnock(s5 + 0.25);
-  playChipClink(s5 + 0.8, 4, 0.35);
-  playCardFlip(s5 + 3.5);
+  // GTO Coach inspection & Flop Bet
+  if (timelineEvents.gtoOpenClick) {
+    playGlassClink(timelineEvents.gtoOpenClick + 0.3);
+  }
+  if (timelineEvents.heroFlopBet) {
+    playChipClink(timelineEvents.heroFlopBet + 0.1, 4, 0);
+    playChipClink(timelineEvents.heroFlopBet + 1.4, 3, -0.35);
+    playChipClink(timelineEvents.heroFlopBet + 2.4, 3, 0.35);
+  }
 
-  // Scene 6: GTO Solver Drawer
-  const s6 = timelineEvents.scene6Start || 46.0;
-  playChipClink(s6 + 0.3, 1, 0);
-  playGlassClink(s6 + 4.5);
+  // Turn deal (10s -> Royal Flush!) & All-In Shove
+  const turnSec = timelineEvents.turnDealt || 44.0;
+  playBurnTap(turnSec + 0.1);
+  playCardFlip(turnSec + 0.35);
 
-  // Scene 7: Dramatic All-In Runout
-  const s7 = timelineEvents.scene7Start || 56.0;
-  playBurnTap(s7 + 0.4);
-  playCardFlip(s7 + 0.65);
-  playBurnTap(s7 + 2.6);
-  playCardFlip(s7 + 2.85);
-  playBurnTap(s7 + 4.8);
-  playCardFlip(s7 + 5.05);
+  if (timelineEvents.heroTurnAllIn) {
+    playChipClink(timelineEvents.heroTurnAllIn + 0.1, 5, 0);
+    playChipClink(timelineEvents.heroTurnAllIn + 1.2, 5, -0.35);
+    playChipClink(timelineEvents.heroTurnAllIn + 2.2, 5, 0.35);
+  }
 
-  // Scene 8: Royal Flush Showdown
-  const s8 = timelineEvents.scene8Start || 64.0;
-  playWinFanfare(s8 + 0.25);
-  playChipClink(s8 + 0.9, 4, -0.2);
-  playChipClink(s8 + 1.4, 4, 0.2);
-  playRiffleShuffle(s8 + 5.5);
+  // River runout & Royal Flush Showdown
+  if (timelineEvents.allInRunoutStart) {
+    playBurnTap(timelineEvents.allInRunoutStart + 1.2);
+    playCardFlip(timelineEvents.allInRunoutStart + 1.5);
+  }
+
+  const showdownSec = timelineEvents.showdownStart || 56.0;
+  playWinFanfare(showdownSec + 0.2);
+  playChipClink(showdownSec + 0.9, 4, -0.2);
+  playChipClink(showdownSec + 1.4, 4, 0.2);
+
+  if (timelineEvents.nextHandClick) {
+    playRiffleShuffle(timelineEvents.nextHandClick + 0.15);
+    for (let i = 0; i < 6; i++) {
+      playCardSlide(timelineEvents.nextHandClick + 0.55 + i * 0.09, ((i % 3) - 1) * 0.3);
+    }
+  }
 
   // Soft limiter & write 16-bit PCM Stereo WAV
   const wavPath = path.join(TMP_DIR, 'master_audio.wav');
@@ -322,82 +342,84 @@ function buildMasterAudioWav(totalDurationSec, timelineEvents, voiceClips) {
 async function generateDemoVideo() {
   fs.mkdirSync(TMP_DIR, { recursive: true });
 
-  console.log('🎙️ 1. Synthesizing Multi-Persona English Voice Lines (Dealer, Viktor, Elena, Bao, Marcus)...');
+  console.log(
+    '🎙️ 1. Synthesizing Multi-Persona English Voice Lines (Dealer, Viktor, Elena, Bao, Marcus)...'
+  );
   const rawVoices = {
     dealer_welcome: synthesizeVoiceClip(
       'dealer_welcome',
       'Moira',
-      175,
+      176,
       'Welcome to the Monte Carlo V I P table. Shuffle up and deal. Blinds two and four dollars.'
+    ),
+    bao_scrolling: synthesizeVoiceClip(
+      'bao_scrolling',
+      'Reed',
+      180,
+      'Hold on, watching this reel on my phone... Yeah, I call four dollars.'
     ),
     viktor_preflop: synthesizeVoiceClip(
       'viktor_preflop',
       'Daniel',
       178,
-      'Ten dollars to play. Let us see how you navigate this street.'
+      'Ten dollars from the Small Blind? I call. Let us see a flop.'
     ),
-    elena_fold: synthesizeVoiceClip(
-      'elena_fold',
-      'Samantha',
-      180,
-      'Too rich for my blood right now. I fold.'
-    ),
-    marcus_maniac: synthesizeVoiceClip(
-      'marcus_maniac',
-      'Rocko',
-      192,
-      'Haha! Scared money never wins in Monte Carlo! Count me in!'
-    ),
-    bao_scrolling: synthesizeVoiceClip(
-      'bao_scrolling',
-      'Reed',
-      178,
-      'Hold on, watching this reel on my phone... Yeah, I call eight dollars.'
+    dealer_flop: synthesizeVoiceClip(
+      'dealer_flop',
+      'Moira',
+      176,
+      'Burn and turn the Flop. Queen of spades, Jack of spades, Nine of hearts.'
     ),
     bao_monster: synthesizeVoiceClip(
       'bao_monster',
       'Reed',
-      172,
-      'Wait. Putting the phone down. All focus now. Raise to forty-five dollars.'
+      174,
+      'Wait. Putting my phone down right now. All focus on this pot.'
     ),
     viktor_warn: synthesizeVoiceClip(
       'viktor_warn',
       'Daniel',
       178,
-      'Careful... Bao just put his phone flat on the rail. He has a monster hand.'
+      'Careful... Bao just placed his phone flat on the rail. He flopped a monster.'
     ),
     dealer_gto: synthesizeVoiceClip(
       'dealer_gto',
       'Moira',
       178,
-      'Real-time G T O Solver active. Node-locked exploitative mode adjusts your optimal strategy against Bao.'
+      'Real-time G T O Coach active. Node-locked exploitative mode adjusts your strategy against Bao.'
+    ),
+    dealer_turn: synthesizeVoiceClip(
+      'dealer_turn',
+      'Moira',
+      176,
+      'Fourth street, the Turn. Ten of spades!'
     ),
     dealer_allin: synthesizeVoiceClip(
       'dealer_allin',
       'Moira',
       176,
-      'All-in showdown! Players, turn your cards face up. Dealing the turn and river.'
+      'All-in showdown! Three ways for six hundred ten dollars. Dealing the river.'
     ),
     dealer_royal: synthesizeVoiceClip(
       'dealer_royal',
       'Moira',
       175,
-      'Royal Flush! Seat Zero wins the four hundred twenty dollar main pot!'
+      'Royal Flush! Seat Zero sweeps the six hundred ten dollar main pot!'
     ),
     marcus_outro: synthesizeVoiceClip(
       'marcus_outro',
       'Rocko',
       190,
-      'Unbelievable! A Royal Flush under the Monte Carlo lights! Nice hand!'
+      'Unbelievable! A live Royal Flush in Monte Carlo! Deal the next hand!'
     ),
   };
 
-  console.log('🚀 2. Starting Vite server & Headless Chrome for 1080p Recording...');
+  console.log('🚀 2. Starting Vite server & Headless Chrome for 1080p Live Playthrough Recording...');
   const { server: viteServer, url } = await startViteServer();
 
   const timelineEvents = {};
   let recordedWebmPath = '';
-  let totalDurationSec = 72;
+  let totalDurationSec = 70;
 
   let browser;
   try {
@@ -426,19 +448,22 @@ async function generateDemoVideo() {
     const recordStartMs = Date.now();
     const nowSec = () => (Date.now() - recordStartMs) / 1000;
 
-    await page.goto(url, { waitUntil: 'networkidle' });
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 120000 });
     await page.waitForSelector('canvas', { timeout: 10000 });
+    // Skip the blank page-load stretch (GLB download + Vite cold start) at encode time
+    timelineEvents.introTrimSec = Math.max(0, nowSec() - 0.4);
 
-    // Inject sleek Broadcast Bilingual Caption & Speaker Overlay helper
+    // Inject Broadcast Bilingual Caption Overlay + Animated Interactive Cursor & Click Ripple
     await page.evaluate(() => {
+      // 1. Caption Overlay
       const overlay = document.createElement('div');
       overlay.id = 'demo-broadcast-overlay';
       overlay.style.cssText = [
         'position: fixed',
         'left: 50%',
-        'bottom: 108px',
+        'bottom: 112px',
         'transform: translateX(-50%)',
-        'z-index: 9999',
+        'z-index: 9998',
         'pointer-events: none',
         'display: flex',
         'flex-direction: column',
@@ -468,7 +493,7 @@ async function generateDemoVideo() {
           backdrop-filter: blur(12px);
           border: 1px solid rgba(212, 175, 55, 0.55);
           border-radius: 16px;
-          padding: 12px 22px;
+          padding: 10px 22px;
           text-align: center;
           box-shadow: 0 16px 40px rgba(0,0,0,0.75);
           width: 100%;
@@ -480,19 +505,19 @@ async function generateDemoVideo() {
             color: #facc15;
             letter-spacing: 0.06em;
             text-transform: uppercase;
-            margin-bottom: 4px;
+            margin-bottom: 3px;
           "></div>
           <div id="demo-en-line" style="
             font-family: ui-sans-serif, system-ui, sans-serif;
-            font-size: 18px;
+            font-size: 17px;
             font-weight: 700;
             color: #ffffff;
             line-height: 1.35;
-            margin-bottom: 4px;
+            margin-bottom: 3px;
           "></div>
           <div id="demo-kr-line" style="
             font-family: ui-sans-serif, system-ui, sans-serif;
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 600;
             color: #cbd5e1;
             line-height: 1.35;
@@ -501,7 +526,7 @@ async function generateDemoVideo() {
       `;
       document.body.appendChild(overlay);
 
-      window.__SET_DEMO_CAPTION__ = ({ chapter, speaker, en, kr, bottomPx = 108 }) => {
+      window.__SET_DEMO_CAPTION__ = ({ chapter, speaker, en, kr, bottomPx = 112 }) => {
         const el = document.getElementById('demo-broadcast-overlay');
         const chapEl = document.getElementById('demo-chapter-pill');
         const spkEl = document.getElementById('demo-speaker-line');
@@ -513,327 +538,491 @@ async function generateDemoVideo() {
         if (enEl) enEl.textContent = en || '';
         if (krEl) krEl.textContent = kr || '';
       };
+
+      // 2. Visible Interactive Pointer Cursor + Click Ripple
+      const cursor = document.createElement('div');
+      cursor.id = 'demo-live-cursor';
+      cursor.style.cssText = [
+        'position: fixed',
+        'left: 960px',
+        'top: 540px',
+        'z-index: 10000',
+        'pointer-events: none',
+        'transition: left 0.42s cubic-bezier(0.22, 1, 0.36, 1), top 0.42s cubic-bezier(0.22, 1, 0.36, 1), transform 0.15s ease',
+        'display: flex',
+        'align-items: flex-start',
+        'gap: 8px',
+      ].join(';');
+      cursor.innerHTML = `
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" style="filter: drop-shadow(0 4px 10px rgba(0,0,0,0.85));">
+          <path d="M4 3L12.5 24L15.8 15.8L24 12.5L4 3Z" fill="#facc15" stroke="#0f172a" stroke-width="2.2" stroke-linejoin="round"/>
+        </svg>
+        <div id="demo-cursor-tag" style="
+          background: rgba(15, 23, 42, 0.92);
+          border: 1px solid rgba(250, 204, 21, 0.75);
+          color: #fef08a;
+          padding: 3px 10px;
+          border-radius: 9999px;
+          font-family: ui-sans-serif, system-ui, sans-serif;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.04em;
+          white-space: nowrap;
+          box-shadow: 0 6px 18px rgba(0,0,0,0.65);
+          opacity: 0;
+          transition: opacity 0.2s ease;
+          margin-top: 10px;
+        "></div>
+      `;
+      document.body.appendChild(cursor);
+
+      window.__MOVE_DEMO_CURSOR__ = (x, y, tagText = '') => {
+        const c = document.getElementById('demo-live-cursor');
+        const tag = document.getElementById('demo-cursor-tag');
+        if (c) {
+          c.style.left = `${x}px`;
+          c.style.top = `${y}px`;
+        }
+        if (tag) {
+          if (tagText) {
+            tag.textContent = tagText;
+            tag.style.opacity = '1';
+          } else {
+            tag.style.opacity = '0';
+          }
+        }
+      };
+
+      window.__PULSE_DEMO_CLICK__ = (x, y) => {
+        const c = document.getElementById('demo-live-cursor');
+        if (c) {
+          c.style.transform = 'scale(0.86)';
+          setTimeout(() => {
+            c.style.transform = 'scale(1)';
+          }, 140);
+        }
+        const ripple = document.createElement('div');
+        ripple.style.cssText = [
+          'position: fixed',
+          `left: ${x - 22}px`,
+          `top: ${y - 22}px`,
+          'width: 44px',
+          'height: 44px',
+          'border-radius: 9999px',
+          'border: 3px solid #facc15',
+          'background: rgba(250, 204, 21, 0.25)',
+          'z-index: 9999',
+          'pointer-events: none',
+          'transform: scale(0.3)',
+          'opacity: 1',
+          'transition: transform 0.45s ease-out, opacity 0.45s ease-out',
+        ].join(';');
+        document.body.appendChild(ripple);
+        requestAnimationFrame(() => {
+          ripple.style.transform = 'scale(1.65)';
+          ripple.style.opacity = '0';
+        });
+        setTimeout(() => ripple.remove(), 500);
+      };
     });
 
     const setCaption = async (payload) => {
-      await page.evaluate((p) => window.__SET_DEMO_CAPTION__ && window.__SET_DEMO_CAPTION__(p), payload);
+      await page.evaluate(
+        (p) => window.__SET_DEMO_CAPTION__ && window.__SET_DEMO_CAPTION__(p),
+        payload
+      );
     };
 
+    const clickWithCursor = async (locatorOrSelector, tagLabel = '', holdMs = 460) => {
+      const loc =
+        typeof locatorOrSelector === 'string'
+          ? page.locator(locatorOrSelector).first()
+          : locatorOrSelector.first();
+      if ((await loc.count()) === 0) return false;
+      const box = await loc.boundingBox();
+      if (!box) return false;
+      const cx = Math.round(box.x + box.width / 2);
+      const cy = Math.round(box.y + box.height / 2);
+      await page.evaluate(
+        ({ x, y, label }) => window.__MOVE_DEMO_CURSOR__ && window.__MOVE_DEMO_CURSOR__(x, y, label),
+        { x: cx, y: cy, label: tagLabel }
+      );
+      await page.waitForTimeout(holdMs);
+      await page.evaluate(
+        ({ x, y }) => window.__PULSE_DEMO_CLICK__ && window.__PULSE_DEMO_CLICK__(x, y),
+        { x: cx, y: cy }
+      );
+      await loc.click({ force: true });
+      await page.waitForTimeout(180);
+      return true;
+    };
+
+    const waitForHeroTurn = async (expectedPhase, timeoutMs = 15000) => {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        const state = await page.evaluate(() => window.__POKER_DOGFOOD__?.getState());
+        if (
+          state &&
+          (!expectedPhase || state.table.phase === expectedPhase) &&
+          state.players[0]?.isTurn &&
+          !state.table.isAllInRunout
+        ) {
+          return state;
+        }
+        await page.waitForTimeout(150);
+      }
+      return null;
+    };
+
+    // Rig the live deck before clicking "Take Your Seat" so Hand #1 deals a thrilling,
+    // 100% authentic multi-street hand:
+    // - Seat 0 (You, SB): A♠ K♠
+    // - Seat 1 (Viktor, BB): Q♥ 10♣
+    // - Seat 2 (Elena, UTG): 7♦ 2♣ (folds preflop)
+    // - Seat 3 (Bao, CO): 9♣ 9♦ (scrolls phone preflop -> flops Set of 9s & puts phone down!)
+    // - Seat 4 (Marcus, BTN): 4♣ 2♥ (calls preflop -> folds to flop bet)
+    // - Flop: Q♠ J♠ 9♥ (You flop Royal Flush draw; Bao flops Set of Nines & puts phone down!)
+    // - Turn: 10♠ (You hit the Royal Flush A♠ K♠ Q♠ J♠ 10♠ and shove All-In!)
+    // - River: 2♦ (Dealt during the dramatic 3-way All-In Runout!)
+    await page.evaluate(() => {
+      window.__POKER_DOGFOOD__?.rigNextDeck([
+        // Pass 1 (Seats 0, 1, 2, 3, 4)
+        { suit: 'spades', rank: 14, faceUp: false }, // Seat 0 (You): A♠
+        { suit: 'hearts', rank: 12, faceUp: false }, // Seat 1 (Viktor): Q♥
+        { suit: 'diamonds', rank: 7, faceUp: false }, // Seat 2 (Elena): 7♦
+        { suit: 'clubs', rank: 9, faceUp: false }, // Seat 3 (Bao): 9♣
+        { suit: 'clubs', rank: 4, faceUp: false }, // Seat 4 (Marcus): 4♣
+        // Pass 2 (Seats 0, 1, 2, 3, 4)
+        { suit: 'spades', rank: 13, faceUp: false }, // Seat 0 (You): K♠
+        { suit: 'clubs', rank: 10, faceUp: false }, // Seat 1 (Viktor): 10♣
+        { suit: 'clubs', rank: 2, faceUp: false }, // Seat 2 (Elena): 2♣
+        { suit: 'diamonds', rank: 9, faceUp: false }, // Seat 3 (Bao): 9♦
+        { suit: 'hearts', rank: 2, faceUp: false }, // Seat 4 (Marcus): 2♥
+        // Flop Burn + Flop (Q♠ J♠ 9♥)
+        { suit: 'diamonds', rank: 3, faceUp: false }, // Burn #1
+        { suit: 'spades', rank: 12, faceUp: true }, // Flop 1: Q♠
+        { suit: 'spades', rank: 11, faceUp: true }, // Flop 2: J♠
+        { suit: 'hearts', rank: 9, faceUp: true }, // Flop 3: 9♥
+        // Turn Burn + Turn (10♠)
+        { suit: 'clubs', rank: 5, faceUp: false }, // Burn #2
+        { suit: 'spades', rank: 10, faceUp: true }, // Turn: 10♠
+        // River Burn + River (2♦)
+        { suit: 'diamonds', rank: 6, faceUp: false }, // Burn #3
+        { suit: 'diamonds', rank: 2, faceUp: true }, // River: 2♦
+      ]);
+    });
+
     // =========================================================================
-    // SCENE 1 (0s - 8s): Title Screen, Vision Pro Modal, & Table Entry
+    // CHAPTER 1: Title Screen -> Live Table Entry ("Take Your Seat")
     // =========================================================================
     timelineEvents.scene1Start = nowSec();
     await setCaption({
-      chapter: '01 / 08 • MONTE CARLO VIP SUITE & APPLE VISION PRO (WebXR)',
-      speaker: '🎙️ SYSTEM OVERVIEW • GEMINI 3.8 TTS + LYRIA 3 + NANO BANANA',
-      en: 'Realistic 3D WebXR Texas Hold’em Casino with Spatial Hand Tracking & AI Personas',
-      kr: 'Spatial Hand Tracking, Behavioral AI Personas & Real-Time 13×13 GTO Coaching',
+      chapter: '01 / 06 • MONTE CARLO VIP SUITE • LIVE PLAYTHROUGH ENTRY',
+      speaker: '🎙️ SYSTEM OVERVIEW • WEBXR + GEMINI 3.8 TTS + LYRIA 3',
+      en: 'Entering the 3D Monte Carlo VIP Table for a live, unedited Sit & Go hand',
+      kr: '타이틀 화면에서 [Take Your Seat]를 클릭해 실제 라이브 홀덤 테이블로 즉시 진입합니다',
       bottomPx: 96,
     });
-    await page.waitForTimeout(2200);
+    await page.waitForTimeout(2400);
 
-    // Briefly showcase the Vision Pro Calibration & USDZ Modal
-    const vpBtn = page.locator('button:has-text("Vision Pro Test")');
-    if ((await vpBtn.count()) > 0) {
-      await vpBtn.click();
-      await page.waitForTimeout(1800);
-      const closeVpBtn = page.locator('button:has-text("Close")');
-      if ((await closeVpBtn.count()) > 0) await closeVpBtn.click();
-      await page.waitForTimeout(400);
-    }
-
-    // Click "Play in 3D Desktop Mode"
-    timelineEvents.scene1PlayClick = nowSec();
+    timelineEvents.enterTableClick = nowSec();
     await setCaption({
-      chapter: '01 / 08 • ENTERING THE MONTE CARLO VIP SUITE',
+      chapter: '01 / 06 • TAKING SEAT #0 & 2-PASS CLOCKWISE DEAL',
       speaker: '🎙️ VIP CROUPIER (DEALER VOICE)',
       en: '"Welcome to the Monte Carlo VIP table. Shuffle up and deal. Blinds $2 and $4."',
-      kr: 'Dealer: "Welcome to the Monte Carlo VIP salon. Cards are in the air."',
+      kr: '크루피어가 덱을 리플 셔플한 뒤 시계 방향으로 1장씩 2패스(2-Pass)로 홀카드를 딜링합니다',
       bottomPx: 118,
     });
-    const playBtn = page
-      .locator(
-        '[data-testid="title-start-desktop"], button:has-text("Take Your Seat"), button:has-text("Play in 3D Desktop Mode")'
-      )
-      .first();
-    if ((await playBtn.count()) > 0) {
-      await playBtn.click();
-    }
-    await page.waitForTimeout(3800);
+    await clickWithCursor('[data-testid="title-start-desktop"]', 'Click: Take Your Seat (Seat #0)', 520);
 
     // =========================================================================
-    // SCENE 2 (8s - 17s): Seat #0 POV Preflop Deal & Macro 3D Hole Card Peel
+    // CHAPTER 2: Live Preflop — Bao's Phone-Scrolling Tell, Peeking A♠ K♠ & Raising
     // =========================================================================
-    timelineEvents.scene2Start = nowSec();
+    await page.waitForTimeout(1400);
+    timelineEvents.baoPreflopScroll = nowSec();
+    // Zoom in on Bao while AI preflop action runs so viewer sees him scrolling reels
     await page.evaluate(() => {
-      const api = window.__POKER_DOGFOOD__;
-      api.loadScenario('preflop_deal');
-      api.setCameraPreset('seat0_pov');
-      api.setShow2DHUD(true);
+      window.__POKER_DOGFOOD__?.setCameraPreset('bao_tell_closeup');
     });
     await setCaption({
-      chapter: '02 / 08 • SEAT #0 POV & PHYSICAL 3D HOLE CARD PEEK',
-      speaker: '🎙️ VIKTOR (SEAT #1 • THE SHARK) — ⌚ GLANCES AT GOLD WATCH',
-      en: '"Ten dollars to play. Let’s see how you navigate this street."',
-      kr: 'Viktor (Shark AI): "$10 bet. Watch-glance sizing tell detected."',
+      chapter: '02 / 06 • LIVE PREFLOP ACTION & BAO’S SMARTPHONE REEL TELL',
+      speaker: '🎙️ BAO (SEAT #3 • CALLING STATION) — 📱 SCROLLING REELS',
+      en: '"Hold on, watching this reel on my phone... Yeah, I call four dollars."',
+      kr: '바오(Seat #3)가 프리플랍에서 스마트폰 릴스를 보며 건성으로 $4 콜(약한/중간 핸드 텔)',
+      bottomPx: 118,
+    });
+
+    // Wait until AI preflop actions finish and it becomes Seat #0's live turn
+    await waitForHeroTurn('preflop', 12000);
+    await page.waitForTimeout(1600);
+
+    // Return to Seat #0 POV for our live Preflop turn
+    await page.evaluate(() => {
+      window.__POKER_DOGFOOD__?.setCameraPreset('seat0_pov');
+    });
+    await page.waitForTimeout(600);
+
+    // Click "Peek" button to lock hole cards face-up (revealing A♠ K♠!)
+    timelineEvents.heroPeekClick = nowSec();
+    await setCaption({
+      chapter: '02 / 06 • YOUR TURN (PREFLOP) • PEEKING & LOCKING HOLE CARDS (A♠ K♠)',
+      speaker: '🃏 SEAT #0 (YOU) • LOCKING HOLE CARDS & 3D CORNER PEEL',
+      en: 'Clicking [Peek] reveals Pocket Ace-King of Spades (A♠ K♠) with live 3D shader corner peel',
+      kr: '[Peek] 버튼을 클릭해 내 홀카드(A♠ K♠)를 확인하고 오픈 상태로 고정(Locked)합니다',
+      bottomPx: 118,
+    });
+    await clickWithCursor('[data-testid="action-peek"]', 'Click: Peek & Lock Cards (A♠ K♠)', 480);
+
+    // Briefly show Macro 3D Card Peel & Clay Chips close-up
+    await page.evaluate(() => {
+      window.__POKER_DOGFOOD__?.setCameraPreset('macro_cards_chips');
+    });
+    await page.waitForTimeout(2400);
+    await page.evaluate(() => {
+      window.__POKER_DOGFOOD__?.setCameraPreset('seat0_pov');
+    });
+    await page.waitForTimeout(500);
+
+    // Select 2.5x bet sizing preset ($10) and click Raise $10!
+    await setCaption({
+      chapter: '02 / 06 • LIVE PREFLOP RAISE ($10) & AI CALLS',
+      speaker: '🎙️ VIKTOR (SEAT #1 • THE SHARK) — CALLS $10',
+      en: '"Ten dollars from the Small Blind? I call. Let us see a flop."',
+      kr: '2.5x($10) 프리셋을 선택해 레이즈하고 빅터·바오·마커스가 콜하며 플랍으로 진입합니다',
+      bottomPx: 118,
+    });
+    await clickWithCursor('[data-testid="bet-preset-25x"]', 'Select Sizing: 2.5x ($10)', 420);
+    timelineEvents.heroPreflopRaise = nowSec();
+    await clickWithCursor('[data-testid="action-raise"]', 'Click: Raise to $10', 450);
+
+    // =========================================================================
+    // CHAPTER 3: Live Flop (Q♠ J♠ 9♥) & Bao Puts Phone Flat on Rail (🔥 PHONE DOWN!)
+    // =========================================================================
+    await waitForHeroTurn('flop', 15000);
+    timelineEvents.flopDealt = nowSec();
+
+    await setCaption({
+      chapter: '03 / 06 • THE FLOP (Q♠ J♠ 9♥) • BAO PUTS PHONE DOWN (🔥 MONSTER TELL!)',
+      speaker: '🎙️ BAO (SEAT #3) — 📱➡️🃏 PUTS PHONE FLAT ON RAIL (SET OF NINES)',
+      en: '"Wait. Putting my phone down right now. All focus on this pot."',
+      kr: '플랍 Q♠ J♠ 9♥가 깔리자 트리플 9를 맞춘 바오가 스마트폰을 레일 위에 내려놓고 집중합니다!',
+      bottomPx: 118,
+    });
+    await page.waitForTimeout(1600);
+
+    // Zoom into Bao so viewer sees his phone lying flat on the mahogany rail + "🔥 PHONE DOWN!" badge
+    await page.evaluate(() => {
+      window.__POKER_DOGFOOD__?.setCameraPreset('bao_tell_closeup');
+    });
+    await page.waitForTimeout(3400);
+
+    timelineEvents.viktorWarn = nowSec();
+    await page.evaluate(() => {
+      window.__POKER_DOGFOOD__?.setCameraPreset('seat0_pov');
+    });
+    await setCaption({
+      chapter: '03 / 06 • HIGH-STAKES MUSIC SHIFT & LIVE TELL ALERT',
+      speaker: '🎙️ VIKTOR (SEAT #1) — ⚠️ READS BAO’S PHYSICAL TELL',
+      en: '"Careful... Bao just placed his phone flat on the rail. He flopped a monster."',
+      kr: '사운드트랙이 High-Stakes 긴장 모드로 전환되고 바오의 몬스터 핸드 텔 배지가 점등됩니다',
+      bottomPx: 118,
+    });
+    await page.waitForTimeout(2600);
+
+    // =========================================================================
+    // CHAPTER 4: Live 13×13 GTO Coach Inspection & Flop C-Bet ($20)
+    // =========================================================================
+    timelineEvents.gtoOpenClick = nowSec();
+    await setCaption({
+      chapter: '04 / 06 • REAL-TIME 13×13 GTO COACH & NODE-LOCKED EXPLOIT ENGINE',
+      speaker: '🎙️ VIP CROUPIER • LIVE GTO & EXPLOITATIVE SOLVER',
+      en: '"Real-time GTO Coach active. Node-locked exploitative mode adjusts your strategy against Bao."',
+      kr: '[GTO] 버튼을 클릭해 로열 플러시 드로우(12 Outs)의 실시간 승률·EV와 169 핸드 매트릭스를 확인합니다',
+      bottomPx: 118,
+    });
+    await clickWithCursor('[data-testid="hud-gto-trigger"]', 'Click: Open 13×13 GTO Coach', 480);
+    await page.waitForTimeout(2200);
+
+    // Toggle Pure GTO <-> Exploit inside the open GTO drawer
+    const pureGtoTab = page.locator('[data-hud-drawer="gto"] button:has-text("Pure GTO")');
+    if ((await pureGtoTab.count()) > 0) {
+      await clickWithCursor(pureGtoTab, 'Compare: Pure GTO Baseline', 420);
+      await page.waitForTimeout(1400);
+    }
+    const exploitTab = page.locator('[data-hud-drawer="gto"] button:has-text("Exploit")');
+    if ((await exploitTab.count()) > 0) {
+      await clickWithCursor(exploitTab, 'Switch: Node-Locked Exploit vs Bao', 420);
+      await page.waitForTimeout(1400);
+    }
+
+    // Close GTO drawer by clicking the GTO button again
+    await clickWithCursor('[data-testid="hud-gto-trigger"]', 'Close GTO Drawer', 380);
+    await page.waitForTimeout(400);
+
+    // Click 50% Pot preset ($20) and click Bet $20 on the Flop!
+    await clickWithCursor('[data-testid="bet-preset-50"]', 'Select Sizing: 50% Pot ($20)', 400);
+    timelineEvents.heroFlopBet = nowSec();
+    await clickWithCursor('[data-testid="action-raise"]', 'Click: Bet $20 on Flop', 440);
+
+    // =========================================================================
+    // CHAPTER 5: The Turn (10♠) — Hitting the Royal Flush & Shoving All-In!
+    // =========================================================================
+    await waitForHeroTurn('turn', 15000);
+    timelineEvents.turnDealt = nowSec();
+
+    await setCaption({
+      chapter: '05 / 06 • THE TURN (10♠) • ROYAL FLUSH COMPLETED (A♠ K♠ Q♠ J♠ 10♠)!',
+      speaker: '🎙️ VIP CROUPIER — FOURTH STREET: TEN OF SPADES (10♠)',
+      en: '"Fourth street, the Turn. Ten of spades!" — You hit the nuts: Royal Flush!',
+      kr: '턴 카드로 10♠가 떨어지며 당신의 핸드(A♠ K♠)가 로열 플러시(A♠ K♠ Q♠ J♠ 10♠)를 완성합니다!',
+      bottomPx: 118,
+    });
+    await page.waitForTimeout(2800);
+
+    // Click "Max" preset and shove All-In ($170 remaining -> $610 Total Pot!)
+    await clickWithCursor('[data-testid="bet-preset-max"]', 'Select Sizing: MAX (All-In)', 420);
+    timelineEvents.heroTurnAllIn = nowSec();
+    await clickWithCursor('[data-testid="action-raise"]', 'Click: Shove All-In!', 460);
+
+    // =========================================================================
+    // CHAPTER 6: Dramatic 3-Way All-In Runout, Showdown & Dealing Next Hand
+    // =========================================================================
+    // Wait until Viktor & Bao call All-In and the Dramatic All-In Runout starts
+    const runoutWaitStart = Date.now();
+    while (Date.now() - runoutWaitStart < 12000) {
+      const st = await page.evaluate(() => window.__POKER_DOGFOOD__?.getState());
+      if (st?.table?.isAllInRunout || st?.table?.phase === 'showdown') break;
+      await page.waitForTimeout(120);
+    }
+    timelineEvents.allInRunoutStart = nowSec();
+
+    await page.evaluate(() => {
+      window.__POKER_DOGFOOD__?.setCameraPreset('dealer_pov');
+    });
+    await setCaption({
+      chapter: '06 / 06 • DRAMATIC 3-WAY ALL-IN RUNOUT ($610 MAIN POT)',
+      speaker: '🎙️ VIP CROUPIER • CARDS FACE UP ON THE EMERALD FELT',
+      en: '"All-in showdown! Three ways for $610. Players, turn your cards face up!"',
+      kr: '3명 전원 올인($610 팟)! 모든 홀카드가 오픈된 채 크림슨·골드 조명 아래 리버(2♦)가 딜링됩니다',
+      bottomPx: 118,
+    });
+
+    // Wait for Showdown phase
+    const showdownWaitStart = Date.now();
+    while (Date.now() - showdownWaitStart < 15000) {
+      const st = await page.evaluate(() => window.__POKER_DOGFOOD__?.getState());
+      if (st?.table?.phase === 'showdown') break;
+      await page.waitForTimeout(150);
+    }
+    timelineEvents.showdownStart = nowSec();
+
+    await page.evaluate(() => {
+      window.__POKER_DOGFOOD__?.setCameraPreset('seat0_pov');
+    });
+    await setCaption({
+      chapter: '06 / 06 • ROYAL FLUSH SHOWDOWN VICTORY ($610 POT) & NEXT HAND',
+      speaker: '🎙️ VIP CROUPIER — 🏆 ROYAL FLUSH (A♠ K♠ Q♠ J♠ 10♠) WINS $610!',
+      en: '"Royal Flush! Seat Zero sweeps the $610 main pot!"',
+      kr: '로열 플러시 5장의 카드가 황금빛으로 부양하며 $610 메인 팟을 획득하고 다음 핸드로 이어집니다!',
       bottomPx: 118,
     });
     await page.waitForTimeout(4200);
 
-    // Macro close-up of 3D Hole Card Corner Peel (A♠ J♠)
-    await page.evaluate(() => {
-      const api = window.__POKER_DOGFOOD__;
-      api.loadScenario('card_peel');
-      api.setCameraPreset('macro_cards_chips');
-      api.setShow2DHUD(false);
-    });
+    // Click "Next Hand" button to prove continuous multi-hand gameplay!
+    timelineEvents.nextHandClick = nowSec();
     await setCaption({
-      chapter: '02 / 08 • TACTILE 3D CORNER PEEL & CLAY CHIP STACKS',
-      speaker: '🃏 MACRO VIEW • HOLE CARDS (A♠ J♠) & 4 DENOMINATION STACKS',
-      en: 'Shader-driven 3D card corner peel and physically stacked clay poker chips ($1, $5, $25, $100)',
-      kr: 'Tactile 3D hole-card corner peel (A♠ J♠) with 4 clay chip denominations & spatial rim controls',
-      bottomPx: 42,
-    });
-    await page.waitForTimeout(4400);
-
-    // =========================================================================
-    // SCENE 3 (17s - 26s): 3D Chip Staging & Rim Cast AI Personalities
-    // =========================================================================
-    timelineEvents.scene3Start = nowSec();
-    await page.evaluate(() => {
-      const api = window.__POKER_DOGFOOD__;
-      api.loadScenario('chip_drag_stage');
-      api.setCameraPreset('macro_cards_chips');
-      api.setShow2DHUD(false);
-    });
-    await setCaption({
-      chapter: '03 / 08 • GOLDEN BETTING RING & AI TABLE BANTER',
-      speaker: '🎙️ ELENA (SEAT #2 • THE ROCK)',
-      en: '"Too rich for my blood right now. I fold."',
-      kr: 'Elena (Tight-Aggressive AI): "Too rich for my range right now. I fold."',
-      bottomPx: 42,
-    });
-    await page.waitForTimeout(3800);
-
-    timelineEvents.scene3MarcusVoice = nowSec();
-    await page.evaluate(() => {
-      const api = window.__POKER_DOGFOOD__;
-      api.setCameraPreset('viktor_marcus_rim');
-      api.setShow2DHUD(false);
-    });
-    await setCaption({
-      chapter: '03 / 08 • ARTICULATED 3D VIP CAST & NANO BANANA PORTRAITS',
-      speaker: '🎙️ MARCUS (SEAT #4 • THE MANIAC) — 🎲 CHIP FIDGET BLUFF TELL',
-      en: '"Haha! Scared money never wins in Monte Carlo! Count me in!"',
-      kr: 'Marcus (LAG Maniac AI): "Scared money never wins in Monte Carlo! Count me in!"',
-      bottomPx: 42,
-    });
-    await page.waitForTimeout(4800);
-
-    // =========================================================================
-    // SCENE 4 (26s - 36s): Bao's Distracted Smartphone Tell (Scrolling Reels)
-    // =========================================================================
-    timelineEvents.scene4Start = nowSec();
-    await page.evaluate(() => {
-      const api = window.__POKER_DOGFOOD__;
-      api.loadScenario('bao_phone_scroll');
-      api.setCameraPreset('bao_tell_closeup');
-      api.setShow2DHUD(false);
-    });
-    await setCaption({
-      chapter: '04 / 08 • LIVE BEHAVIORAL TELL #1: BAO SCROLLING SMARTPHONE REELS',
-      speaker: '🎙️ BAO (SEAT #3 • CALLING STATION) — 📱 TINNY PHONE AUDIO LEAK',
-      en: '"Hold on, watching this reel on my phone... Yeah, I call eight dollars."',
-      kr: 'Bao (Calling Station AI): Distracted smartphone reel scrolling indicates a weak/marginal holding',
-      bottomPx: 42,
-    });
-    await page.waitForTimeout(9200);
-
-    // =========================================================================
-    // SCENE 5 (36s - 46s): Bao's Monster Hand Tell (🔥 PHONE DOWN!)
-    // =========================================================================
-    timelineEvents.scene5Start = nowSec();
-    await page.evaluate(() => {
-      const api = window.__POKER_DOGFOOD__;
-      api.loadScenario('bao_phone_down_monster');
-      api.setCameraPreset('bao_tell_closeup');
-      api.setShow2DHUD(false);
-    });
-    await setCaption({
-      chapter: '05 / 08 • LIVE BEHAVIORAL TELL #2: BAO PUTS PHONE FLAT ON RAIL (🔥 MONSTER HAND!)',
-      speaker: '🎙️ BAO (SEAT #3) — 📱➡️🃏 LOCKS PHONE & LEANS FORWARD WITH POCKET ACES',
-      en: '"Wait. Putting the phone down. All focus now. Raise to forty-five dollars."',
-      kr: 'Bao locks his smartphone face-down on the leather rail — Live Monster-Hand Tell!',
-      bottomPx: 42,
-    });
-    await page.waitForTimeout(5400);
-
-    timelineEvents.scene5ViktorWarn = nowSec();
-    await page.evaluate(() => {
-      const api = window.__POKER_DOGFOOD__;
-      api.setCameraPreset('seat0_pov');
-      api.setShow2DHUD(true);
-    });
-    await setCaption({
-      chapter: '05 / 08 • HIGH-STAKES SOUNDTRACK SHIFT & HUD TELL ALERT BADGE',
-      speaker: '🎙️ VIKTOR (SEAT #1) — ⚠️ WARNING ABOUT BAO’S TELL',
-      en: '"Careful... Bao just put his phone flat on the rail. He has a monster hand."',
-      kr: 'Viktor: "Careful... Bao just placed his phone flat on the rail. He holds a monster."',
+      chapter: '06 / 06 • CONTINUOUS LIVE GAMEPLAY • DEALING HAND #2',
+      speaker: '🎙️ MARCUS (SEAT #4) — 🎉 TABLE REACTION & HAND #2 DEAL',
+      en: '"Unbelievable! A live Royal Flush in Monte Carlo! Deal the next hand!"',
+      kr: '[Next Hand]를 클릭해 $610 스택으로 즉시 핸드 #2를 딜링하며 연속 플레이를 이어갑니다',
       bottomPx: 118,
     });
-    await page.waitForTimeout(4800);
+    await clickWithCursor('[data-testid="action-next-hand"]', 'Click: Deal Next Hand (#2)', 480);
+    await page.waitForTimeout(3600);
 
-    // =========================================================================
-    // SCENE 6 (46s - 56s): Real-Time 13x13 GTO Solver & Exploitative Node-Lock
-    // =========================================================================
-    timelineEvents.scene6Start = nowSec();
-    const menuTrigger = page.locator('[data-testid="hud-menu-trigger"]');
-    if ((await menuTrigger.count()) > 0) {
-      await menuTrigger.click();
-      await page.waitForTimeout(600);
-      const gtoBtn = page.locator('button:has-text("13×13 GTO Solver")');
-      if ((await gtoBtn.count()) > 0) {
-        await gtoBtn.click();
-      }
-    }
-    await setCaption({
-      chapter: '06 / 08 • REAL-TIME 169-HAND GTO SOLVER & NODE-LOCKED EXPLOIT ENGINE',
-      speaker: '🎙️ VIP CROUPIER • GTO & EXPLOITATIVE COACH',
-      en: '"Real-time GTO Solver active. Node-locked exploitative mode adjusts your optimal strategy against Bao."',
-      kr: 'Real-time 13×13 GTO Range Matrix, Equity, Pot Odds & Node-Locked Exploitative Coaching',
-      bottomPx: 28,
-    });
-    await page.waitForTimeout(8800);
-
-    // Close GTO Drawer before Scene 7
-    const closeGtoBtn = page.locator('button:has-text("Close")').first();
-    if ((await closeGtoBtn.count()) > 0) {
-      await closeGtoBtn.click().catch(() => {});
-    }
-    await page.keyboard.press('Escape').catch(() => {});
-    await page.waitForTimeout(400);
-
-    // =========================================================================
-    // SCENE 7 (56s - 64s): Dramatic Multi-Way All-In Runout (Dealer POV)
-    // =========================================================================
-    timelineEvents.scene7Start = nowSec();
+    // Hide cursor cleanly at the end
     await page.evaluate(() => {
-      const api = window.__POKER_DOGFOOD__;
-      api.loadScenario('all_in_runout');
-      api.setCameraPreset('dealer_pov');
-      api.setShow2DHUD(false);
+      const c = document.getElementById('demo-live-cursor');
+      if (c) c.style.opacity = '0';
     });
-    await setCaption({
-      chapter: '07 / 08 • DRAMATIC MULTI-WAY ALL-IN RUNOUT (MAIN POT $260 • SIDE POT $240)',
-      speaker: '🎙️ VIP CROUPIER • CRIMSON & GOLD SPOTLIGHT CHOREOGRAPHY',
-      en: '"All-in showdown! Players, turn your cards face up. Dealing the turn and river."',
-      kr: 'Dealer: "All-in showdown! Cards face up on the felt as we deal the turn and river."',
-      bottomPx: 42,
-    });
-    await page.waitForTimeout(7800);
-
-    // =========================================================================
-    // SCENE 8 (64s - 74s): Royal Flush Showdown & Live Auto-Pilot Finale
-    // =========================================================================
-    timelineEvents.scene8Start = nowSec();
-    await page.evaluate(() => {
-      const api = window.__POKER_DOGFOOD__;
-      api.loadScenario('showdown_multiway');
-      api.setCameraPreset('seat0_pov');
-      api.setShow2DHUD(true);
-    });
-    await setCaption({
-      chapter: '08 / 08 • ROYAL FLUSH SHOWDOWN & POT SWEEP CELEBRATION',
-      speaker: '🎙️ VIP CROUPIER — 🏆 ROYAL FLUSH (A♠ K♠ Q♠ J♠ 10♠) WINS $420!',
-      en: '"Royal Flush! Seat Zero wins the four hundred twenty dollar main pot!"',
-      kr: 'Dealer: "Royal Flush! Seat #0 sweeps the $420 main pot!"',
-      bottomPx: 118,
-    });
-    await page.waitForTimeout(5200);
-
-    timelineEvents.scene8MarcusOutro = nowSec();
-    await setCaption({
-      chapter: '08 / 08 • MONTE CARLO VIP 3D POKER • DEPLOYED ON GOOGLE CLOUD RUN',
-      speaker: '🎙️ MARCUS (SEAT #4) — 🎉 TABLE REACTION',
-      en: '"Unbelievable! A Royal Flush under the Monte Carlo lights! Nice hand!"',
-      kr: 'Marcus: "Unbelievable! A Royal Flush under the Monte Carlo lights! Nice hand!"',
-      bottomPx: 118,
-    });
-    await page.waitForTimeout(4800);
+    await page.waitForTimeout(600);
 
     totalDurationSec = nowSec();
     await context.close();
     recordedWebmPath = await videoObj.path();
-    console.log(`✅ Playwright 1080p video recorded (${totalDurationSec.toFixed(1)}s): ${recordedWebmPath}`);
+    console.log(
+      `✅ Playwright 1080p live playthrough recorded (${totalDurationSec.toFixed(1)}s): ${recordedWebmPath}`
+    );
+    console.log('⏱️ Timeline Events:', JSON.stringify(timelineEvents, null, 2));
   } finally {
     if (browser) await browser.close();
     await viteServer.close();
   }
 
-  // Build synchronized voice clip schedule using the exact recorded timestamps
+  // Build synchronized voice clip schedule using the exact recorded timestamps from the live playthrough
   const voiceSchedule = [
     {
-      startSec: (timelineEvents.scene1PlayClick || 4.0) + 0.15,
+      startSec: (timelineEvents.enterTableClick || 2.8) + 0.25,
       samples: rawVoices.dealer_welcome,
       gainL: 0.95,
       gainR: 0.95,
     },
     {
-      startSec: (timelineEvents.scene2Start || 8.0) + 0.35,
-      samples: rawVoices.viktor_preflop,
-      gainL: 0.98,
-      gainR: 0.82,
-    },
-    {
-      startSec: (timelineEvents.scene3Start || 17.0) + 0.25,
-      samples: rawVoices.elena_fold,
-      gainL: 0.92,
-      gainR: 0.92,
-    },
-    {
-      startSec: (timelineEvents.scene3MarcusVoice || 21.0) + 0.2,
-      samples: rawVoices.marcus_maniac,
-      gainL: 0.82,
-      gainR: 0.98,
-    },
-    {
-      startSec: (timelineEvents.scene4Start || 26.0) + 0.8,
+      startSec: (timelineEvents.baoPreflopScroll || 5.0) + 0.35,
       samples: rawVoices.bao_scrolling,
       gainL: 0.85,
       gainR: 0.96,
     },
     {
-      startSec: (timelineEvents.scene5Start || 36.0) + 0.35,
+      startSec: (timelineEvents.heroPreflopRaise || 14.0) + 0.35,
+      samples: rawVoices.viktor_preflop,
+      gainL: 0.98,
+      gainR: 0.82,
+    },
+    {
+      startSec: (timelineEvents.flopDealt || 20.0) + 0.15,
+      samples: rawVoices.dealer_flop,
+      gainL: 0.95,
+      gainR: 0.95,
+    },
+    {
+      startSec: (timelineEvents.flopDealt || 20.0) + 4.3,
       samples: rawVoices.bao_monster,
       gainL: 0.88,
       gainR: 0.98,
     },
     {
-      startSec: (timelineEvents.scene5ViktorWarn || 41.5) + 0.2,
+      startSec: (timelineEvents.viktorWarn || 26.0) + 0.25,
       samples: rawVoices.viktor_warn,
       gainL: 0.98,
       gainR: 0.84,
     },
     {
-      startSec: (timelineEvents.scene6Start || 46.5) + 0.5,
+      startSec: (timelineEvents.gtoOpenClick || 29.0) + 0.35,
       samples: rawVoices.dealer_gto,
       gainL: 0.95,
       gainR: 0.95,
     },
     {
-      startSec: (timelineEvents.scene7Start || 56.0) + 0.35,
+      startSec: (timelineEvents.turnDealt || 40.0) + 0.15,
+      samples: rawVoices.dealer_turn,
+      gainL: 0.95,
+      gainR: 0.95,
+    },
+    {
+      startSec: (timelineEvents.allInRunoutStart || 46.0) + 0.15,
       samples: rawVoices.dealer_allin,
       gainL: 0.95,
       gainR: 0.95,
     },
     {
-      startSec: (timelineEvents.scene8Start || 64.0) + 0.35,
+      startSec: (timelineEvents.showdownStart || 52.0) + 0.25,
       samples: rawVoices.dealer_royal,
       gainL: 0.96,
       gainR: 0.96,
     },
     {
-      startSec: (timelineEvents.scene8MarcusOutro || 69.2) + 0.2,
+      startSec: (timelineEvents.nextHandClick || 57.0) + 0.2,
       samples: rawVoices.marcus_outro,
       gainL: 0.84,
       gainR: 0.98,
@@ -871,6 +1060,8 @@ async function generateDemoVideo() {
     '-b:a',
     '192k',
     '-shortest',
+    '-ss',
+    String(timelineEvents.introTrimSec || 0),
     OUTPUT_MP4,
   ]);
 
@@ -879,7 +1070,10 @@ async function generateDemoVideo() {
 
   const stat = fs.statSync(OUTPUT_MP4);
   console.log(
-    `🎉 Demo video successfully created: ${OUTPUT_MP4} (${(stat.size / (1024 * 1024)).toFixed(2)} MB)`
+    `🎉 Live-Playthrough Demo video successfully created: ${OUTPUT_MP4} (${(
+      stat.size /
+      (1024 * 1024)
+    ).toFixed(2)} MB)`
   );
 }
 

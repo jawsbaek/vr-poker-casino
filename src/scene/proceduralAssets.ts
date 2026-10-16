@@ -1736,12 +1736,13 @@ export function createRealisticSkinMaterial(hexColor: string): THREE.MeshPhysica
     color: hexColor,
     roughness: 0.64,
     metalness: 0.01,
-    sheen: 0.22,
+    envMapIntensity: 0.22,
+    sheen: 0.18,
     sheenRoughness: 0.75,
     sheenColor: new THREE.Color('#f59e7a'),
     clearcoat: 0.02,
     clearcoatRoughness: 0.65,
-    reflectivity: 0.22,
+    reflectivity: 0.20,
   });
 }
 
@@ -1767,7 +1768,7 @@ export function buildArticulatedForearmAndHand(
     forearm.position.set(0, 0.045, -0.085);
     armGroup.add(forearm);
 
-    const cuffMat = new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.38 });
+    const cuffMat = new THREE.MeshStandardMaterial({ color: '#cbd5e1', roughness: 0.65, envMapIntensity: 0.22 });
     const cuffGeo = new THREE.CylinderGeometry(0.029, 0.031, 0.026, 14);
     cuffGeo.rotateX(Math.PI / 2.1);
     const cuff = new THREE.Mesh(cuffGeo, cuffMat);
@@ -1880,11 +1881,11 @@ export function populate3DCharacterHeadAndTorso(
 
   // Upgrade skinMat in-place or ensure physical properties for realistic subsurface sheen
   if ('sheen' in skinMat) {
-    skinMat.sheen = 0.38;
-    skinMat.sheenRoughness = 0.65;
+    skinMat.sheen = 0.20;
+    skinMat.sheenRoughness = 0.75;
     skinMat.sheenColor = new THREE.Color('#f59e7a');
-    skinMat.clearcoat = 0.08;
-    skinMat.clearcoatRoughness = 0.45;
+    skinMat.clearcoat = 0.02;
+    skinMat.clearcoatRoughness = 0.65;
   }
 
   // Elongate head slightly for natural 3D cranial/jaw proportions
@@ -1892,15 +1893,15 @@ export function populate3DCharacterHeadAndTorso(
 
   // Cornea Clearcoat Sclera & Wet Eye Materials
   const scleraMat = new THREE.MeshPhysicalMaterial({
-    color: '#f8fafc',
-    roughness: 0.08,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.03,
-    reflectivity: 0.9,
+    color: '#cbd5e1',
+    roughness: 0.12,
+    clearcoat: 0.65,
+    clearcoatRoughness: 0.05,
+    reflectivity: 0.5,
   });
   const pupilMat = new THREE.MeshStandardMaterial({ color: '#090c12', roughness: 0.08 });
   const catchlightMat = new THREE.MeshBasicMaterial({ color: '#ffffff' });
-  const whiteShirtMat = new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.38 });
+  const whiteShirtMat = new THREE.MeshStandardMaterial({ color: '#cbd5e1', roughness: 0.65, envMapIntensity: 0.22 });
   const noseMat = new THREE.MeshPhysicalMaterial({
     color: skinMat.color.clone().multiplyScalar(0.93),
     roughness: 0.38,
