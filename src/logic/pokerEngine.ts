@@ -656,7 +656,7 @@ export const QUICK_EMOTES: QuickEmote[] = [
   {
     id: 'eyes_off_phone',
     label: 'Phone Check',
-    text: "Hey Bao, eyes off the phone—we're playing Hold'em!",
+    text: "Hey Bao, eyes off the phone. We're playing Hold'em!",
     icon: '📱',
   },
   {
@@ -716,7 +716,7 @@ export function generateAITurnBanter(
           'Price of admission just went up.',
           'Let us thin the field a little.',
           'A standard continuation. Your move.',
-          'Bao is still staring at his screen—easy blinds.',
+          'Bao is still staring at his screen. Easy blinds.',
         ]);
       } else if (action.type === 'call') {
         text = pick([
@@ -766,14 +766,14 @@ export function generateAITurnBanter(
       if (!ai.isWatchingPhone || ai.activeTell === 'phone_down_monster') {
         // Phone is DOWN on the table!
         text = pick([
-          'Hold on—putting the phone down for this hand.',
+          'Hold on, putting the phone down for this hand.',
           'Screen locked. You have my full attention now.',
           'Wait a second... look at these cards. I am in!',
         ]);
       } else if (action.type === 'allin') {
         text = pick([
           'Hold my phone! All-in!',
-          'Pushing the whole stack—hope I do not miss my stream!',
+          'Pushing the whole stack. Hope I do not miss my stream!',
         ]);
       } else if (action.type === 'call') {
         text = pick([
@@ -785,7 +785,7 @@ export function generateAITurnBanter(
       } else if (action.type === 'check') {
         text = pick([
           'Oh, on me? Check, check.',
-          'Checking—this video is hilarious, keep dealing.',
+          'Check. This video is hilarious, keep dealing.',
         ]);
       } else {
         text = pick([
@@ -803,7 +803,7 @@ export function generateAITurnBanter(
         text = pick([
           'ALL IN BABY! Fortune favors the bold!',
           'Ship it! Let us see some fireworks!',
-          'No guts, no Monte Carlo glory—all in!',
+          'No guts, no Monte Carlo glory. All in!',
         ]);
       } else if (action.type === 'raise' || action.type === 'bet') {
         text = pick([
@@ -813,11 +813,11 @@ export function generateAITurnBanter(
         ]);
       } else if (action.type === 'call') {
         text = pick([
-          'I love action—count me in!',
+          'I love action. Count me in!',
           'Floating along! Any two cards can win!',
         ]);
       } else if (action.type === 'check') {
-        text = pick(['Trapping? Maybe! Check!', 'Free card—I will take it!']);
+        text = pick(['Trapping? Maybe! Check!', 'Free card? I will take it!']);
       } else {
         text = pick(['Even I can not bluff this board. Fold!', 'Alright, alright, you got me.']);
       }
@@ -859,7 +859,7 @@ export function generateAIEmoteReply(
   if (emoteId === 'eyes_off_phone' && responder.persona === 'heavy_phone') {
     text = pick([
       'Relax! I can scroll my feed and call your bets at the same time!',
-      'Wait until I put this phone down—then you are really in trouble.',
+      'Wait until I put this phone down. Then you are really in trouble.',
       'Hey, multitasking is a high-roller skill, my friend!',
     ]);
   } else if (emoteId === 'nice_hand') {
@@ -881,7 +881,7 @@ export function generateAIEmoteReply(
       responder.persona === 'flashy_maniac'
         ? 'Now you are speaking my language! Pile those chips in!'
         : responder.persona === 'heavy_phone'
-        ? 'Hold on, pausing my video—let us splash the pot!'
+        ? 'Hold on, pausing my video. Let us splash the pot!'
         : 'Careful what you wish for.';
   } else {
     text =
@@ -935,7 +935,7 @@ export function generateAIGTOReactionBanter(
         text = pick([
           `Textbook solver sizing from ${record.position}. You know your pot odds.`,
           `Clean GTO frequency there. You are not making it easy to exploit you.`,
-          `Sharp line—your range construction is disciplined.`,
+          `Sharp line. Well played.`,
         ]);
         break;
       case 'woman':
@@ -962,7 +962,7 @@ export function generateAIGTOReactionBanter(
     switch (responder.persona) {
       case 'general_man':
         text = pick([
-          `Questionable math—that line torches roughly ${record.evLossBB.toFixed(1)} big blinds of EV.`,
+          `Bad math. That cost about ${record.evLossBB.toFixed(1)} big blinds.`,
           `The pot odds were ${record.potOddsPct}%, yet you deviated heavily. Interesting.`,
           `My solver model says that play is a major EV leak.`,
         ]);

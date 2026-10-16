@@ -742,7 +742,7 @@ export const App: React.FC = () => {
         nextBao.id,
         nextBao.name,
         nextBao.color,
-        '📱➡️🃏 [Locks his phone screen, places it flat on the mahogany rail, and leans forward]',
+        '[Puts his phone down and leans in]',
         false
       );
     }
@@ -1630,7 +1630,7 @@ export const App: React.FC = () => {
             activeTell: 'phone_down_monster',
             cards: [makeCard('A', 'hearts'), makeCard('A', 'diamonds')],
             lastAction: 'Raise to $45',
-            activeChatBubble: '📱➡️🃏 All focus now. Raise to $45.',
+            activeChatBubble: 'Phone down. Raise to $45.',
             activeChatTimestamp: now,
           };
           nextPlayers[4] = {

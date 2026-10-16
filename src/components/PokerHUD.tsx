@@ -146,8 +146,8 @@ const DOGFOOD_SCENARIOS: { id: DogfoodScenarioId; label: string; desc: string }[
   { id: 'chip_drag_stage', label: '3. Staged Bet Ring', desc: '$175 staged inside gold ring' },
   { id: 'bao_phone_scroll', label: '4. Bao Phone Scroll', desc: 'Dr. Bao scrolling video feed' },
   { id: 'bao_phone_down_monster', label: '5. 🔥 Bao Phone Down', desc: 'Phone flat on rail + monster raise' },
-  { id: 'all_in_runout', label: '6. 🔥 All-In Spotlight', desc: 'Dimmed room + intense runout beam' },
-  { id: 'showdown_multiway', label: '7. 🏆 Showdown Sweep', desc: 'Levitating winning hand + pot sweep' },
+  { id: 'all_in_runout', label: '6. 🔥 All-In Spotlight', desc: 'Spotlight on the runout' },
+  { id: 'showdown_multiway', label: '7. 🏆 Showdown Sweep', desc: 'Winning hand rises, pot is swept' },
 ];
 
 export const PokerHUD: React.FC<PokerHUDProps> = ({
@@ -415,14 +415,14 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
       return {
         label: '🔥 Phone Down!',
         className: 'bg-amber-500/30 text-amber-200 border-amber-400 animate-pulse',
-        title: 'Tell Alert: Bao locked his phone and placed it flat on the mahogany rail!',
+        title: 'Tell: Bao put his phone down.',
       };
     }
     if (p.persona === 'heavy_phone' && p.isWatchingPhone) {
       return {
         label: '📱 Scrolling',
         className: 'bg-cyan-500/20 text-cyan-300 border-cyan-400/50',
-        title: 'Bao is hunched over his glowing smartphone scrolling short videos',
+        title: 'Bao is scrolling his phone',
       };
     }
     if (p.activeTell === 'watch_glance_strong') {
@@ -436,7 +436,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
       return {
         label: '🎲 Chip Fidget',
         className: 'bg-rose-500/20 text-rose-200 border-rose-400/40',
-        title: 'Marcus is restlessly fidgeting with his chip stack',
+        title: 'Marcus is fidgeting with his chips',
       };
     }
     if (p.activeTell === 'posture_tight') {
@@ -451,7 +451,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
 
   const [showVisionProModal, setShowVisionProModal] = useState(false);
   const [pinchCalibrationHits, setPinchCalibrationHits] = useState<number[]>([0, 0, 0]);
-  const [lastPinchTarget, setLastPinchTarget] = useState<string>('Tap or Eye-Pinch a calibration ring below');
+  const [lastPinchTarget, setLastPinchTarget] = useState<string>('Tap or pinch a ring below');
 
   const isSecure = typeof window !== 'undefined' ? window.isSecureContext : false;
   const hasWebXRAPI = typeof navigator !== 'undefined' && 'xr' in navigator;
@@ -459,7 +459,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
   const handleCalibrationPinch = (idx: number, label: string) => {
     pokerAudio.playChipClink(2);
     setPinchCalibrationHits((prev) => prev.map((c, i) => (i === idx ? c + 1 : c)));
-    setLastPinchTarget(`Verified Gaze+Pinch on ${label} (${new Date().toLocaleTimeString()})`);
+    setLastPinchTarget(`Pinched ${label} (${new Date().toLocaleTimeString()})`);
   };
 
   const renderVisionProModal = () => {
@@ -471,7 +471,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
             <div className="flex items-center gap-2.5">
               <Glasses className="w-5 h-5 text-[#d4af37]" />
               <h3 className="text-base font-black tracking-wide text-[#f8fafc] uppercase">
-                Apple Vision Pro (visionOS) Test &amp; Calibration Suite
+                Vision Pro calibration
               </h3>
             </div>
             <button
@@ -509,7 +509,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
 
           <div className="bg-[#0f141c] border border-slate-800 rounded-2xl p-3.5 mb-4 text-xs text-[#94a3b8] space-y-1.5">
             <div className="font-bold text-[#f3e5ab] uppercase tracking-wider text-[11px]">
-              Real Apple Vision Pro Setup (visionOS Safari):
+              On a real Vision Pro (Safari):
             </div>
             <div>
               1. Open <strong className="text-[#f8fafc]">Settings → Apps → Safari → Advanced → Feature Flags</strong> on Vision Pro.
@@ -518,14 +518,14 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
               2. Enable <strong className="text-[#f8fafc]">WebXR Device API</strong>, <strong className="text-[#f8fafc]">WebXR Hand Input Module</strong>, and <strong className="text-[#f8fafc]">WebXR VRModule</strong>.
             </div>
             <div>
-              3. Look at any chip stack, hole card, or spatial button and <strong className="text-[#f8fafc]">pinch thumb + index finger</strong> (`transient-pointer`) or reach out with direct 25-joint optical hand tracking.
+              3. Look at any chip stack, hole card, or spatial button and <strong className="text-[#f8fafc]">pinch thumb + index finger</strong> (`transient-pointer`) or touch it.
             </div>
           </div>
 
           <div className="bg-[#0f141c] border border-[#d4af37]/30 rounded-2xl p-3.5 mb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#f3e5ab]">
-                Interactive Eye-Gaze + Pinch Calibration Targets
+                Calibration targets
               </span>
               <span className="text-[11px] font-mono text-[#d4af37]">{lastPinchTarget}</span>
             </div>
@@ -552,7 +552,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
               className="flex-1 py-2.5 px-4 rounded-xl bg-[#d4af37]/20 hover:bg-[#d4af37]/30 border border-[#d4af37]/50 text-[#f3e5ab] font-bold text-xs flex items-center justify-center gap-2 text-center"
             >
               <img src="/models/vip_poker_table.usdz" alt="" className="hidden" />
-              <span>📦 Open 1:1 Table in visionOS AR QuickLook (.USDZ)</span>
+              <span>Open table in AR Quick Look (.USDZ)</span>
             </a>
             <a
               href="/models/vision_pro_ergonomics_report.json"
@@ -654,7 +654,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
                 onEnterVR();
               }}
               className="py-2.5 px-4 rounded-xl bg-[#0f141c] hover:bg-slate-900 text-[#f3e5ab] border border-[#d4af37]/45 font-bold text-xs sm:text-sm tracking-wider uppercase transition-all active:scale-95 flex items-center gap-1.5"
-              title="Enter immersive WebXR / VR table view"
+              title="Enter VR"
             >
               <Glasses className="w-4 h-4 text-[#d4af37]" />
               <span>{isXRSupported ? 'Enter VR' : 'VR Mode'}</span>
@@ -940,7 +940,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
                     <div className="text-[11px] font-extrabold">{sc.label}</div>
                     <div className="text-[9px] text-[#94a3b8]">{sc.desc}</div>
                   </div>
-                  <span className="text-[10px] font-mono text-[#d4af37] font-bold">로드 →</span>
+                  <span className="text-[10px] font-mono text-[#d4af37] font-bold">로드</span>
                 </button>
               ))}
             </div>
@@ -1051,7 +1051,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
                     title={
                       cardsVisible
                         ? `${getRankLabel(c.rank)}${getSuitSymbol(c.suit)}`
-                        : 'Facedown Hole Card (Hold Peek or Spacebar)'
+                        : 'Hold Peek or Space to see'
                     }
                   >
                     {cardsVisible ? (
@@ -1089,7 +1089,7 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
                     ? 'Folded (폴드됨)'
                     : cardsVisible && handEval
                     ? handEval.description
-                    : '홀카드 덮임 — Peek(스페이스바)으로 확인'}
+                    : 'Peek(스페이스바)으로 확인'}
                 </div>
               </div>
             </div>
