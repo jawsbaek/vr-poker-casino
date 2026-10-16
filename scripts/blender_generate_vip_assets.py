@@ -383,6 +383,149 @@ def create_fluted_pedestal_base(mat_mahogany, mat_brass):
         finalize_mesh_object(spoke, mat_brass, smooth=True)
 
 
+def create_sculpted_clay_chip_mesh(name, radius=0.022, height=0.0045, segments=36):
+    """Creates a realistic compression-molded clay casino chip mesh with beveled stack edges,
+    12 radial mold notches on the outer clay ring, and a 0.28mm recessed center medallion inlay well."""
+    mesh = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+
+    half_h = height * 0.5
+    bevel_h = half_h - 0.00055
+    well_h = half_h - 0.00028
+
+    r_outer = radius
+    r_bevel = radius - 0.00065
+    r_well_outer = radius * 0.64
+    r_well_inner = radius * 0.61
+
+    # Profile rings from bottom center to top center
+    # (r, z, is_edge)
+    profile = [
+        (0.0, -well_h),
+        (r_well_inner, -well_h),
+        (r_well_outer, -half_h),
+        (r_bevel, -half_h),
+        (r_outer, -bevel_h),
+        (r_outer, bevel_h),
+        (r_bevel, half_h),
+        (r_well_outer, half_h),
+        (r_well_inner, well_h),
+        (0.0, well_h),
+    ]
+
+    bot_center = bm.verts.new((0.0, 0.0, -well_h))
+    top_center = bm.verts.new((0.0, 0.0, well_h))
+
+    rings = []
+    for r_idx in range(1, len(profile) - 1):
+        rad, z_val = profile[r_idx]
+        ring_v = []
+        for s in range(segments):
+            theta = (s / segments) * math.pi * 2.0
+            # Subtle 12-notch compression mold relief on the raised clay rim
+            mold_wave = 0.00008 * math.cos(theta * 12.0) if r_idx in (2, 3, 6, 7) else 0.0
+            px = math.cos(theta) * (rad + mold_wave)
+            py = math.sin(theta) * (rad + mold_wave)
+            ring_v.append(bm.verts.new((px, py, z_val + mold_wave * 0.5)))
+        rings.append(ring_v)
+
+    # Bottom center fan, intermediate quad strips, top center fan
+    for s in range(segments):
+        nxt = (s + 1) % segments
+        bm.faces.new((bot_center, rings[0][nxt], rings[0][s]))
+        for r_i in range(len(rings) - 1):
+            bm.faces.new((rings[r_i][s], rings[r_i][nxt], rings[r_i + 1][nxt], rings[r_i + 1][s]))
+        bm.faces.new((rings[-1][s], rings[-1][nxt], top_center))
+
+    bm.normal_update()
+    uv_layer = bm.loops.layers.uv.new("UVMap")
+    for face in bm.faces:
+        for loop in face.loops:
+            v = loop.vert.co
+            loop[uv_layer].uv = (v.x / (radius * 2.0) + 0.5, v.y / (radius * 2.0) + 0.5)
+
+    bm.to_mesh(mesh)
+    bm.free()
+    return mesh
+
+
+def create_rounded_cambered_card_mesh(name, width=0.086, length=0.122, thickness=0.0008, corner_r=0.0035, camber=0.0006):
+    """Creates a poker-standard 86x122mm playing card with 3.5mm rounded corners, beveled core edge,
+    and a 0.6mm longitudinal casino bridge camber arch."""
+    mesh = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+
+    nx = 10
+    ny = 14
+    half_w = width * 0.5
+    half_l = length * 0.5
+    half_t = thickness * 0.5
+
+    def clamp_rounded_rect(x, y):
+        cx = max(-half_w + corner_r, min(half_w - corner_r, x))
+        cy = max(-half_l + corner_r, min(half_l - corner_r, y))
+        dx = x - cx
+        dy = y - cy
+        dist = math.hypot(dx, dy)
+        if dist > corner_r and dist > 1e-6:
+            x = cx + (dx / dist) * corner_r
+            y = cy + (dy / dist) * corner_r
+        return x, y
+
+    top_grid = []
+    bot_grid = []
+    for iy in range(ny + 1):
+        ty = (iy / ny) * 2.0 - 1.0
+        raw_y = ty * half_l
+        t_row = []
+        b_row = []
+        for ix in range(nx + 1):
+            tx = (ix / nx) * 2.0 - 1.0
+            raw_x = tx * half_w
+            px, py = clamp_rounded_rect(raw_x, raw_y)
+            # Subtle 0.6mm bridge camber crown across the card belly
+            arch_z = camber * math.cos((px / half_w) * (math.pi * 0.5)) * math.cos((py / half_l) * (math.pi * 0.35))
+            t_row.append(bm.verts.new((px, py, half_t + arch_z)))
+            b_row.append(bm.verts.new((px, py, -half_t + arch_z)))
+        top_grid.append(t_row)
+        bot_grid.append(b_row)
+
+    for iy in range(ny):
+        for ix in range(nx):
+            bm.faces.new((top_grid[iy][ix], top_grid[iy][ix + 1], top_grid[iy + 1][ix + 1], top_grid[iy + 1][ix]))
+            bm.faces.new((bot_grid[iy][ix + 1], bot_grid[iy][ix], bot_grid[iy + 1][ix], bot_grid[iy + 1][ix + 1]))
+
+    # Perimeter edge stitch
+    perimeter_top = (
+        [top_grid[0][ix] for ix in range(nx)]
+        + [top_grid[iy][nx] for iy in range(ny)]
+        + [top_grid[ny][ix] for ix in range(nx, 0, -1)]
+        + [top_grid[iy][0] for iy in range(ny, 0, -1)]
+    )
+    perimeter_bot = (
+        [bot_grid[0][ix] for ix in range(nx)]
+        + [bot_grid[iy][nx] for iy in range(ny)]
+        + [bot_grid[ny][ix] for ix in range(nx, 0, -1)]
+        + [bot_grid[iy][0] for iy in range(ny, 0, -1)]
+    )
+    plen = len(perimeter_top)
+    for i in range(plen):
+        nxt = (i + 1) % plen
+        if perimeter_top[i] != perimeter_top[nxt]:
+            bm.faces.new((perimeter_bot[i], perimeter_bot[nxt], perimeter_top[nxt], perimeter_top[i]))
+
+    bm.normal_update()
+    uv_layer = bm.loops.layers.uv.new("UVMap")
+    for face in bm.faces:
+        for loop in face.loops:
+            v = loop.vert.co
+            loop[uv_layer].uv = (v.x / width + 0.5, v.y / length + 0.5)
+
+    bm.to_mesh(mesh)
+    bm.free()
+    return mesh
+
+
 def create_dealer_chip_rack(mat_brass, mat_liner, chip_mats):
     """Creates a recessed brass-framed Dealer Chip Tray & Muck Card Slot at the Dealer position (Y=+0.74m -> Z_three=-0.74m)."""
     tray_y = 0.75
@@ -402,7 +545,7 @@ def create_dealer_chip_rack(mat_brass, mat_liner, chip_mats):
     bed.scale = (0.315, 0.088, 0.008)
     finalize_mesh_object(bed, mat_liner, smooth=True)
 
-    # 6 Brass Divider Ribs + Ornamental Bank Chip Rows in Dealer Tray
+    # 6 Brass Divider Ribs + Individual Sculpted Beveled Bank Chips in Dealer Tray
     denoms = [100, 100, 25, 25, 5, 1]
     for col in range(6):
         cx = (col - 2.5) * 0.048
@@ -413,13 +556,16 @@ def create_dealer_chip_rack(mat_brass, mat_liner, chip_mats):
             rib.scale = (0.003, 0.084, 0.008)
             finalize_mesh_object(rib, mat_brass, smooth=True)
 
-        # Horizontal stacked chip cylinder inside trough
-        bpy.ops.mesh.primitive_cylinder_add(
-            vertices=24, radius=0.019, depth=0.072, location=(cx, tray_y, tray_z + 0.008), rotation=(math.pi / 2, 0, 0)
-        )
-        chip_roll = bpy.context.active_object
-        chip_roll.name = f"Dealer_TrayChips_{col}"
-        finalize_mesh_object(chip_roll, chip_mats[denoms[col]], smooth=True)
+        # Stack of 15 sculpted beveled clay chips standing inside trough
+        for c_idx in range(15):
+            cy_chip = tray_y - 0.033 + c_idx * 0.0047
+            chip_mesh = create_sculpted_clay_chip_mesh(f"Dealer_TrayChip_{col}_{c_idx}", radius=0.0195, height=0.0042, segments=28)
+            chip_obj = bpy.data.objects.new(f"Dealer_TrayChips_{col}_{c_idx}", chip_mesh)
+            bpy.context.collection.objects.link(chip_obj)
+            chip_obj.location = (cx, cy_chip, tray_z + 0.008)
+            chip_obj.rotation_euler = (math.pi / 2, 0.0, 0.0)
+            finalize_mesh_object(chip_obj, chip_mats[denoms[col]], smooth=True)
+
 
 
 def create_curved_wingback_shell(name, radius_inner, radius_outer, z_bot, z_top, world_mat, mat):
@@ -972,10 +1118,10 @@ def build_monte_carlo_salon():
     # 7. 5 Hollowed Drop-In Brushed-Brass Cup Holders aligned with Three.js seats
     seat_positions_three = [
         (0.0, 0.68),
-        (1.02, 0.32),
-        (0.72, -0.50),
-        (-0.72, -0.50),
         (-1.02, 0.32),
+        (-0.72, -0.50),
+        (0.72, -0.50),
+        (1.02, 0.32),
     ]
     for idx, (sx_t, sz_t) in enumerate(seat_positions_three):
         angle = math.atan2(sz_t, sx_t) + 0.26
@@ -1092,8 +1238,34 @@ def compute_ergonomics_report():
         "assetsExported": [
             "/models/vip_poker_table.glb",
             "/models/vip_poker_table.usdz",
+            "/models/vip_cards_and_chips.glb",
         ],
     }
+
+
+def export_sculpted_chip_and_card_prototypes(filepath):
+    """Exports standalone Blender-sculpted base meshes for Three.js InstancedMesh chips and rounded cambered cards."""
+    clear_scene()
+    mat_chip = create_pbr_material("Prototype_Chip_Mat", (0.95, 0.95, 0.95), roughness=0.45, clearcoat=0.85)
+    mat_card = create_pbr_material("Prototype_Card_Mat", (0.98, 0.98, 0.99), roughness=0.32, clearcoat=0.68)
+
+    chip_mesh = create_sculpted_clay_chip_mesh("Prototype_ClayChip", radius=0.022, height=0.0045, segments=36)
+    chip_obj = bpy.data.objects.new("Prototype_ClayChip", chip_mesh)
+    bpy.context.collection.objects.link(chip_obj)
+    finalize_mesh_object(chip_obj, mat_chip, smooth=True)
+
+    card_mesh = create_rounded_cambered_card_mesh(
+        "Prototype_PlayingCard", width=0.086, length=0.122, thickness=0.0008, corner_r=0.0035, camber=0.0006
+    )
+    card_obj = bpy.data.objects.new("Prototype_PlayingCard", card_mesh)
+    bpy.context.collection.objects.link(card_obj)
+    finalize_mesh_object(card_obj, mat_card, smooth=True)
+
+    bpy.ops.export_scene.gltf(
+        filepath=filepath,
+        export_format="GLB",
+        export_apply=True,
+    )
 
 
 def main():
@@ -1103,6 +1275,7 @@ def main():
 
     usdz_path = os.path.join(OUT_DIR, "vip_poker_table.usdz")
     glb_path = os.path.join(OUT_DIR, "vip_poker_table.glb")
+    chips_cards_glb_path = os.path.join(OUT_DIR, "vip_cards_and_chips.glb")
     report_path = os.path.join(OUT_DIR, "vision_pro_ergonomics_report.json")
 
     # Export standard glTF 2.0 Binary (.glb)
@@ -1120,11 +1293,16 @@ def main():
     )
 
     report = compute_ergonomics_report()
+
+    # Export sculpted chip & playing card base meshes (.glb)
+    export_sculpted_chip_and_card_prototypes(chips_cards_glb_path)
+
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
 
-    print("BLENDER_EXPORT_SUCCESS:", glb_path, usdz_path, "Triangles:", report["totalBlenderSceneTrianglesEstimate"])
+    print("BLENDER_EXPORT_SUCCESS:", glb_path, usdz_path, chips_cards_glb_path, "Triangles:", report["totalBlenderSceneTrianglesEstimate"])
 
 
 if __name__ == "__main__":
     main()
+

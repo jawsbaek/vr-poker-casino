@@ -371,3 +371,58 @@ export interface SpatialAuditReport {
   triangles: number;
   checks: SpatialAuditCheck[];
 }
+
+// ============================================================================
+// HUD & UI DESIGN RULES + VERIFICATION HARNESS TYPES
+// ============================================================================
+
+export type ActiveDrawerId = 'none' | 'gto' | 'settings' | 'inspector' | 'xr';
+
+export interface ScreenBoundingRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+export interface HudUiRuleSpec {
+  id: string;
+  code?: string;
+  category: string;
+  title: string;
+  rule?: string;
+  threshold?: string;
+  constraint?: string;
+  rationale?: string;
+}
+
+export interface HudUiAuditCheck {
+  id: string;
+  ruleId?: string;
+  category?: string;
+  label: string;
+  passed: boolean;
+  metric: string;
+  details?: string;
+}
+
+export interface HudUiAuditReport {
+  timestamp: number;
+  allPassed: boolean;
+  show2DHUD?: boolean;
+  isInXR?: boolean;
+  cameraPreset?: CameraPresetId;
+  viewport: { width: number; height: number; area?: number };
+  visibleInteractiveCount: number;
+  topBarUtilityButtonCount: number;
+  hudCoveragePct?: number;
+  hudViewportCoveragePct?: number;
+  activeDrawerCount?: number;
+  openDrawerCount?: number;
+  topBarHeightPx?: number;
+  bottomDockHeightPx?: number;
+  checks: HudUiAuditCheck[];
+}
+

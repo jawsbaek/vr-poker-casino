@@ -5,3 +5,5 @@ dist
 *.log
 dogfood-captures
 public/runtime-config.js
+demo_video.mp4
+

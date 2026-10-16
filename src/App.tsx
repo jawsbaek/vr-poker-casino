@@ -2027,6 +2027,9 @@ export const App: React.FC = () => {
         setSpatialAudit(report);
         return report;
       },
+      getCharacterScreenBounds: () => {
+        return sceneRef.current?.getCharacterScreenBounds() || [];
+      },
       getState: () => ({
         isTitleMode: isTitleModeRef.current,
         table: tableRef.current,

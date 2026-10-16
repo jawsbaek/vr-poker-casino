@@ -2,7 +2,7 @@
   "targetDevice": "Apple Vision Pro (visionOS Safari WebXR + AR QuickLook) & Desktop WebGL2",
   "pipeline": "Hybrid Headless Blender 5.2 LTS + Poly Haven CC0 PBR/HDRI",
   "unitScale": "1.0 unit = 1.0 meter (local-floor reference space)",
-  "totalBlenderSceneTrianglesEstimate": 45916,
+  "totalBlenderSceneTrianglesEstimate": 90964,
   "seatedEyePositionMeters": {
     "x": 0.0,
     "y": 1.42,
@@ -35,6 +35,7 @@
   },
   "assetsExported": [
     "/models/vip_poker_table.glb",
-    "/models/vip_poker_table.usdz"
+    "/models/vip_poker_table.usdz",
+    "/models/vip_cards_and_chips.glb"
   ]
 }

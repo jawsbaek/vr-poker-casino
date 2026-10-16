@@ -146,9 +146,13 @@ async function runDogfoodLoop() {
     });
 
     const page = await context.newPage();
-    page.on('pageerror', (err) => pageErrors.push(err.message));
+    page.on('pageerror', (err) => {
+      console.error('[PAGE ERROR]', err.stack || err.message);
+      pageErrors.push(err.message);
+    });
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
+        console.error('[CONSOLE ERROR]', msg.text());
         consoleErrors.push(msg.text());
       }
     });
@@ -208,7 +212,7 @@ async function runDogfoodLoop() {
       api.setDebugOverlay(false);
     });
     await page.waitForTimeout(500);
-    const inspectorBtn = page.locator('button[title*="3D Visual & Dogfood Inspector"]');
+    const inspectorBtn = page.locator('[data-testid="hud-menu-trigger"]');
     if ((await inspectorBtn.count()) > 0) {
       await inspectorBtn.click();
       await page.waitForTimeout(450);

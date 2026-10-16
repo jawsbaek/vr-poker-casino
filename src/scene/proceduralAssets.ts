@@ -2,85 +2,477 @@ import * as THREE from 'three';
 import { Card, ChipDenomination } from '../types/poker';
 import { getRankLabel, getSuitSymbol } from '../logic/pokerEngine';
 
-// Texture cache to prevent memory leaks and recreate overhead
+// Texture & geometry caches to prevent memory leaks and recreate overhead
 const cardTextureCache = new Map<string, THREE.CanvasTexture>();
-const chipTextureCache = new Map<ChipDenomination, { face: THREE.CanvasTexture; edge: THREE.CanvasTexture }>();
+const chipTextureCache = new Map<
+  ChipDenomination,
+  {
+    face: THREE.CanvasTexture;
+    edge: THREE.CanvasTexture;
+    normalMap: THREE.CanvasTexture;
+    roughnessMap: THREE.CanvasTexture;
+  }
+>();
 let feltTextureCache: THREE.CanvasTexture | null = null;
 let cardBackTextureCache: THREE.CanvasTexture | null = null;
+let cardBackRoughnessCache: THREE.CanvasTexture | null = null;
+let cardLinenNormalCache: THREE.CanvasTexture | null = null;
+let chipNormalCache: THREE.CanvasTexture | null = null;
+let chipRoughnessCache: THREE.CanvasTexture | null = null;
+let sculptedChipGeometryCache: THREE.BufferGeometry | null = null;
+let sculptedCardGeometryCache: THREE.BufferGeometry | null = null;
 let rugTextureCache: THREE.CanvasTexture | null = null;
 let wallTextureCache: THREE.CanvasTexture | null = null;
 
+/**
+ * Generates an Air-Cushion Linen micro-weave tangent-space Normal Map for Kem/Copag casino cards
+ */
+export function getCardLinenNormalMap(): THREE.CanvasTexture {
+  if (cardLinenNormalCache) return cardLinenNormalCache;
+
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const imgData = ctx.createImageData(size, size);
+  const data = imgData.data;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const idx = (y * size + x) * 4;
+      // Diagonal cross-hatched air-cushion linen dimple weave
+      const u = (x + y) * 0.55;
+      const v = (x - y) * 0.55;
+      const nx = Math.cos(u) * 14 + Math.cos(v) * 10;
+      const ny = Math.sin(u) * 14 - Math.sin(v) * 10;
+      data[idx] = Math.max(0, Math.min(255, Math.round(128 + nx)));
+      data[idx + 1] = Math.max(0, Math.min(255, Math.round(128 + ny)));
+      data[idx + 2] = 252;
+      data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(6, 8);
+  cardLinenNormalCache = texture;
+  return texture;
+}
 
 /**
- * Creates high-res procedural ornate casino card back texture
+ * Creates a 1024x1432 procedural ornate Monte-Carlo gold-foil & royal burgundy casino card back texture
  */
 export function getCardBackTexture(): THREE.CanvasTexture {
   if (cardBackTextureCache) return cardBackTextureCache;
 
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 716;
+  canvas.width = 1024;
+  canvas.height = 1432;
   const ctx = canvas.getContext('2d')!;
+  const w = canvas.width;
+  const h = canvas.height;
+  const cx = w / 2;
+  const cy = h / 2;
 
-  // Background deep royal burgundy / gold
-  ctx.fillStyle = '#1e111a';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Warm ivory cellulose-acetate outer border
+  ctx.fillStyle = '#f8fafc';
+  ctx.fillRect(0, 0, w, h);
 
-  // White outer margin
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 14;
-  ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+  // Deep royal burgundy-obsidian inner back field
+  const bgGrad = ctx.createRadialGradient(cx, cy, 80, cx, cy, 780);
+  bgGrad.addColorStop(0, '#311324');
+  bgGrad.addColorStop(0.6, '#1f0c18');
+  bgGrad.addColorStop(1, '#11070e');
+  ctx.fillStyle = bgGrad;
+  ctx.beginPath();
+  ctx.roundRect(42, 42, w - 84, h - 84, 34);
+  ctx.fill();
 
-  // Inner gold border
+  // Outer double gold-foil filigree border
   ctx.strokeStyle = '#d4af37';
-  ctx.lineWidth = 6;
-  ctx.strokeRect(26, 26, canvas.width - 52, canvas.height - 52);
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.roundRect(56, 56, w - 112, h - 112, 26);
+  ctx.stroke();
 
-  // Ornate geometric lattice
+  ctx.strokeStyle = 'rgba(243, 229, 171, 0.65)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.roundRect(74, 74, w - 148, h - 148, 18);
+  ctx.stroke();
+
+  // Ornate guilloché diamond lattice inside clip
   ctx.save();
   ctx.beginPath();
-  ctx.rect(34, 34, canvas.width - 68, canvas.height - 68);
+  ctx.roundRect(80, 80, w - 160, h - 160, 14);
   ctx.clip();
 
-  ctx.strokeStyle = 'rgba(212, 175, 55, 0.35)';
-  ctx.lineWidth = 2;
-  const step = 24;
-  for (let x = -canvas.height; x < canvas.width + canvas.height; x += step) {
+  ctx.strokeStyle = 'rgba(212, 175, 55, 0.34)';
+  ctx.lineWidth = 2.5;
+  const step = 36;
+  for (let x = -h; x < w + h; x += step) {
+    ctx.beginPath();
     ctx.moveTo(x, 0);
-    ctx.lineTo(x + canvas.height, canvas.height);
-    ctx.moveTo(x, canvas.height);
-    ctx.lineTo(x + canvas.height, 0);
+    ctx.lineTo(x + h, h);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, h);
+    ctx.lineTo(x + h, 0);
+    ctx.stroke();
   }
-  ctx.stroke();
 
-  // Central Gold Medallion
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2;
-  ctx.fillStyle = '#2d1822';
+  // Subtle gold rosette dots at lattice intersections
+  ctx.fillStyle = 'rgba(243, 229, 171, 0.28)';
+  for (let y = 96; y < h - 80; y += step) {
+    for (let x = 96; x < w - 80; x += step) {
+      ctx.beginPath();
+      ctx.arc(x, y, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Corner gold-leaf fan flourishes
+  const corners = [
+    [96, 96],
+    [w - 96, 96],
+    [96, h - 96],
+    [w - 96, h - 96],
+  ];
+  for (const [qx, qy] of corners) {
+    ctx.fillStyle = '#1f0c18';
+    ctx.beginPath();
+    ctx.arc(qx, qy, 44, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#d4af37';
+    ctx.lineWidth = 3.5;
+    ctx.stroke();
+    ctx.fillStyle = '#f3e5ab';
+    ctx.font = 'bold 34px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('✦', qx, qy);
+  }
+
+  // Central Monte-Carlo Sunburst Medallion
+  ctx.fillStyle = '#180912';
   ctx.beginPath();
-  ctx.arc(cx, cy, 90, 0, Math.PI * 2);
+  ctx.arc(cx, cy, 185, 0, Math.PI * 2);
   ctx.fill();
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = '#f3e5ab';
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = '#d4af37';
   ctx.stroke();
 
-  // Inner star / diamond
-  ctx.fillStyle = '#d4af37';
-  ctx.font = 'bold 64px "Plus Jakarta Sans", sans-serif';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#f3e5ab';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 166, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 24 Gold Sunburst Rays inside Medallion
+  for (let i = 0; i < 24; i++) {
+    const ang = (i / 24) * Math.PI * 2;
+    ctx.strokeStyle = i % 2 === 0 ? 'rgba(243, 229, 171, 0.5)' : 'rgba(212, 175, 55, 0.25)';
+    ctx.lineWidth = i % 2 === 0 ? 3 : 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(ang) * 58, cy + Math.sin(ang) * 58);
+    ctx.lineTo(cx + Math.cos(ang) * 158, cy + Math.sin(ang) * 158);
+    ctx.stroke();
+  }
+
+  // Center Crown & Spade Crest
+  ctx.fillStyle = '#260e1c';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 82, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#f3e5ab';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+
+  ctx.fillStyle = '#f3e5ab';
+  ctx.font = 'bold 104px Georgia, serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('♠', cx, cy);
+  ctx.fillText('♠', cx, cy + 4);
 
   ctx.restore();
 
   const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
   cardBackTextureCache = texture;
   return texture;
 }
 
 /**
- * Creates crisp front texture for playing card with rank and suit
+ * Returns a roughness map for the card back so gold-foil lines catch sharp specular reflections
+ */
+export function getCardBackRoughnessMap(): THREE.CanvasTexture {
+  if (cardBackRoughnessCache) return cardBackRoughnessCache;
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 358;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#787878'; // Satin base stock (~0.47 roughness)
+  ctx.fillRect(0, 0, 256, 358);
+  ctx.strokeStyle = '#242424'; // Glossy gold foil border (~0.14 roughness)
+  ctx.lineWidth = 6;
+  ctx.strokeRect(14, 14, 228, 330);
+  ctx.beginPath();
+  ctx.arc(128, 179, 46, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const tex = new THREE.CanvasTexture(canvas);
+  cardBackRoughnessCache = tex;
+  return tex;
+}
+
+/**
+ * Helper to draw traditional 2-10 casino pip grids, ornate Ace centerpiece, or Royal Court (J, Q, K) art
+ */
+function drawCasinoCardInterior(
+  ctx: CanvasRenderingContext2D,
+  card: Card,
+  w: number,
+  h: number,
+  color: string,
+  isRed: boolean,
+  rankStr: string,
+  suitStr: string
+) {
+  const cx = w / 2;
+  const cy = h / 2;
+
+  // Inner hairline gold/slate frame separating corner indices from the central pip/court field
+  ctx.strokeStyle = isRed ? 'rgba(212, 175, 55, 0.42)' : 'rgba(148, 163, 184, 0.38)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.roundRect(172, 156, w - 344, h - 312, 18);
+  ctx.stroke();
+
+  const drawPip = (px: number, py: number, size: number, inverted: boolean = false) => {
+    ctx.save();
+    ctx.translate(px, py);
+    if (inverted) ctx.rotate(Math.PI);
+    ctx.fillStyle = color;
+    ctx.font = `${size}px Georgia, "Plus Jakarta Sans", serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(suitStr, 0, 0);
+    ctx.restore();
+  };
+
+  if (card.rank === 14) {
+    // Ornate Monte-Carlo Ace Centerpiece
+    ctx.save();
+    ctx.strokeStyle = 'rgba(212, 175, 55, 0.55)';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 210, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(212, 175, 55, 0.28)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 192, 0, Math.PI * 2);
+    ctx.stroke();
+
+    drawPip(cx, cy, 340, false);
+
+    // Subtle gold crown inside Ace pip
+    ctx.fillStyle = '#d4af37';
+    ctx.font = 'bold 44px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('♛', cx, cy - 8);
+    ctx.restore();
+    return;
+  }
+
+  if (card.rank >= 11 && card.rank <= 13) {
+    // Royal Court Card (J, Q, K) with Gold-Filigree Medallion & Double-Headed Royal Crest
+    ctx.save();
+    const boxX = 192;
+    const boxY = 176;
+    const boxW = w - 384;
+    const boxH = h - 352;
+
+    const courtGrad = ctx.createLinearGradient(boxX, boxY, boxX + boxW, boxY + boxH);
+    courtGrad.addColorStop(0, isRed ? 'rgba(220, 38, 38, 0.06)' : 'rgba(15, 23, 42, 0.06)');
+    courtGrad.addColorStop(0.5, 'rgba(212, 175, 55, 0.14)');
+    courtGrad.addColorStop(1, isRed ? 'rgba(220, 38, 38, 0.06)' : 'rgba(15, 23, 42, 0.06)');
+    ctx.fillStyle = courtGrad;
+    ctx.fillRect(boxX, boxY, boxW, boxH);
+
+    ctx.strokeStyle = '#d4af37';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(boxX, boxY, boxW, boxH);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(boxX + 12, boxY + 12, boxW - 24, boxH - 24);
+
+    // Diagonal reflection divider line (traditional double-headed court split)
+    ctx.strokeStyle = 'rgba(212, 175, 55, 0.45)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(boxX + 12, boxY + boxH * 0.58);
+    ctx.lineTo(boxX + boxW - 12, boxY + boxH * 0.42);
+    ctx.stroke();
+
+    const courtSymbol = card.rank === 13 ? '♚' : card.rank === 12 ? '♛' : '♞';
+    const courtTitle = card.rank === 13 ? 'ROI' : card.rank === 12 ? 'DAME' : 'VALET';
+
+    // Top-half upright royal portrait crest & bottom-half inverted mirror crest
+    for (const isBottom of [false, true]) {
+      ctx.save();
+      ctx.translate(cx, isBottom ? cy + 250 : cy - 250);
+      if (isBottom) ctx.rotate(Math.PI);
+
+      // Gold halo disc behind crown
+      ctx.fillStyle = 'rgba(212, 175, 55, 0.18)';
+      ctx.beginPath();
+      ctx.arc(0, 0, 118, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#d4af37';
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+
+      // Royal chess/crown figure
+      ctx.fillStyle = color;
+      ctx.font = '148px Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(courtSymbol, 0, -8);
+
+      // Flanking large suit pips inside court frame
+      ctx.font = '88px Georgia, serif';
+      ctx.fillText(suitStr, -185, -95);
+      ctx.fillStyle = '#d4af37';
+      ctx.font = 'bold 28px "Cinzel", Georgia, serif';
+      ctx.fillText(courtTitle, 0, 88);
+      ctx.restore();
+    }
+
+    // Center gold-foil royal rank medallion
+    ctx.fillStyle = '#090c12';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 86, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#d4af37';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+
+    ctx.fillStyle = '#f3e5ab';
+    ctx.font = 'bold 92px "Cinzel", Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(rankStr, cx, cy + 4);
+    ctx.restore();
+    return;
+  }
+
+  // Authentic Casino Pip Grid Layouts for Ranks 2..10
+  const leftX = cx - 150;
+  const rightX = cx + 150;
+  const topY = 295;
+  const botY = h - 295;
+  const midY = cy;
+  const upperMidY = (topY + midY) / 2;
+  const lowerMidY = (midY + botY) / 2;
+  const thirdTopY = topY + (botY - topY) * 0.333;
+  const thirdBotY = topY + (botY - topY) * 0.667;
+  const pipSize = card.rank >= 8 ? 148 : 164;
+
+  const pips: Array<[number, number, boolean]> = [];
+  switch (card.rank) {
+    case 2:
+      pips.push([cx, topY, false], [cx, botY, true]);
+      break;
+    case 3:
+      pips.push([cx, topY, false], [cx, midY, false], [cx, botY, true]);
+      break;
+    case 4:
+      pips.push([leftX, topY, false], [rightX, topY, false], [leftX, botY, true], [rightX, botY, true]);
+      break;
+    case 5:
+      pips.push(
+        [leftX, topY, false],
+        [rightX, topY, false],
+        [cx, midY, false],
+        [leftX, botY, true],
+        [rightX, botY, true]
+      );
+      break;
+    case 6:
+      pips.push(
+        [leftX, topY, false],
+        [rightX, topY, false],
+        [leftX, midY, false],
+        [rightX, midY, false],
+        [leftX, botY, true],
+        [rightX, botY, true]
+      );
+      break;
+    case 7:
+      pips.push(
+        [leftX, topY, false],
+        [rightX, topY, false],
+        [cx, upperMidY, false],
+        [leftX, midY, false],
+        [rightX, midY, false],
+        [leftX, botY, true],
+        [rightX, botY, true]
+      );
+      break;
+    case 8:
+      pips.push(
+        [leftX, topY, false],
+        [rightX, topY, false],
+        [cx, upperMidY, false],
+        [leftX, midY, false],
+        [rightX, midY, false],
+        [cx, lowerMidY, true],
+        [leftX, botY, true],
+        [rightX, botY, true]
+      );
+      break;
+    case 9:
+      pips.push(
+        [leftX, topY, false],
+        [rightX, topY, false],
+        [leftX, thirdTopY, false],
+        [rightX, thirdTopY, false],
+        [cx, midY, false],
+        [leftX, thirdBotY, true],
+        [rightX, thirdBotY, true],
+        [leftX, botY, true],
+        [rightX, botY, true]
+      );
+      break;
+    case 10:
+      pips.push(
+        [leftX, topY, false],
+        [rightX, topY, false],
+        [cx, (topY + thirdTopY) / 2, false],
+        [leftX, thirdTopY, false],
+        [rightX, thirdTopY, false],
+        [leftX, thirdBotY, true],
+        [rightX, thirdBotY, true],
+        [cx, (botY + thirdBotY) / 2, true],
+        [leftX, botY, true],
+        [rightX, botY, true]
+      );
+      break;
+  }
+
+  for (const [px, py, inv] of pips) {
+    drawPip(px, py, pipSize, inv);
+  }
+}
+
+/**
+ * Creates crisp 1024x1432 Casino Jumbo-Index + Authentic Pip Grid / Royal Court playing card front texture
  */
 export function getCardFrontTexture(card: Card): THREE.CanvasTexture {
   const cacheKey = `${card.suit}_${card.rank}`;
@@ -89,162 +481,299 @@ export function getCardFrontTexture(card: Card): THREE.CanvasTexture {
   }
 
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 716;
+  canvas.width = 1024;
+  canvas.height = 1432;
   const ctx = canvas.getContext('2d')!;
+  const w = canvas.width;
+  const h = canvas.height;
 
-  // Smooth ivory white card background with subtle gradient
-  const bgGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  bgGrad.addColorStop(0, '#ffffff');
-  bgGrad.addColorStop(1, '#f8fafc');
+  // Warm ivory cellulose-acetate casino card stock (toned to prevent overhead spotlight specular clipping)
+  const bgGrad = ctx.createRadialGradient(w / 2, h / 2, 100, w / 2, h / 2, 860);
+  bgGrad.addColorStop(0, '#f5f2eb');
+  bgGrad.addColorStop(0.75, '#ede8de');
+  bgGrad.addColorStop(1, '#e2dcd0');
   ctx.fillStyle = bgGrad;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Subtle border
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
-  ctx.lineWidth = 4;
-  ctx.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
+  ctx.fillRect(0, 0, w, h);
 
   const isRed = card.suit === 'hearts' || card.suit === 'diamonds';
-  const color = isRed ? '#dc2626' : '#111827';
+  const color = isRed ? '#b91c1c' : '#090d16';
   const rankStr = getRankLabel(card.rank);
   const suitStr = getSuitSymbol(card.suit);
 
-  ctx.fillStyle = color;
+  // Draw Jumbo Corner Indices (Top-Left upright & Bottom-Right inverted)
+  const drawJumboCorner = (isBottomRight: boolean) => {
+    ctx.save();
+    if (isBottomRight) {
+      ctx.translate(w - 92, h - 122);
+      ctx.rotate(Math.PI);
+    } else {
+      ctx.translate(92, 122);
+    }
+    ctx.fillStyle = color;
+    ctx.font =
+      rankStr === '10'
+        ? 'bold 104px "Plus Jakarta Sans", Georgia, sans-serif'
+        : 'bold 118px "Plus Jakarta Sans", Georgia, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(rankStr, 0, 0);
 
-  // Draw Corner Top-Left
-  ctx.font = 'bold 56px "Plus Jakarta Sans", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(rankStr, 56, 75);
-  ctx.font = '48px "Plus Jakarta Sans", sans-serif';
-  ctx.fillText(suitStr, 56, 128);
+    ctx.font = '102px Georgia, "Plus Jakarta Sans", serif';
+    ctx.fillText(suitStr, 0, 108);
+    ctx.restore();
+  };
 
-  // Draw Corner Bottom-Right (rotated)
-  ctx.save();
-  ctx.translate(canvas.width - 56, canvas.height - 75);
-  ctx.rotate(Math.PI);
-  ctx.font = 'bold 56px "Plus Jakarta Sans", sans-serif';
-  ctx.fillText(rankStr, 0, 0);
-  ctx.font = '48px "Plus Jakarta Sans", sans-serif';
-  ctx.fillText(suitStr, 0, -53);
-  ctx.restore();
+  drawJumboCorner(false);
+  drawJumboCorner(true);
 
-  // Draw Center Symbol / Face Art
-  ctx.font = '180px "Plus Jakarta Sans", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(suitStr, canvas.width / 2, canvas.height / 2);
-
-  // Additional Center Rank Watermark
-  ctx.font = 'bold 52px "Plus Jakarta Sans", sans-serif';
-  ctx.fillStyle = isRed ? 'rgba(220, 38, 38, 0.25)' : 'rgba(17, 24, 39, 0.2)';
-  ctx.fillText(rankStr, canvas.width / 2, canvas.height / 2 + 130);
+  // Draw Authentic 2-10 Pip Grid, Ace Medallion, or Royal Court Art
+  drawCasinoCardInterior(ctx, card, w, h, color, isRed, rankStr, suitStr);
 
   const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
   cardTextureCache.set(cacheKey, texture);
   return texture;
 }
 
 /**
- * Creates authentic clay casino chip textures (Face & Edge)
+ * Generates shared procedural Normal Map (12-notch compression clay mold + recessed inlay step)
+ * and Roughness Map (matte chalky clay outer ring vs glossy clearcoat center medallion) for 3D chips.
  */
-export function getChipTextures(denom: ChipDenomination): { face: THREE.CanvasTexture; edge: THREE.CanvasTexture } {
+function getSharedChipPBRMaps(): { normalMap: THREE.CanvasTexture; roughnessMap: THREE.CanvasTexture } {
+  if (chipNormalCache && chipRoughnessCache) {
+    return { normalMap: chipNormalCache, roughnessMap: chipRoughnessCache };
+  }
+
+  const size = 512;
+  const cx = size / 2;
+  const cy = size / 2;
+
+  const norCanvas = document.createElement('canvas');
+  norCanvas.width = size;
+  norCanvas.height = size;
+  const nCtx = norCanvas.getContext('2d')!;
+  const nImg = nCtx.createImageData(size, size);
+  const nData = nImg.data;
+
+  const roughCanvas = document.createElement('canvas');
+  roughCanvas.width = size;
+  roughCanvas.height = size;
+  const rCtx = roughCanvas.getContext('2d')!;
+  const rImg = rCtx.createImageData(size, size);
+  const rData = rImg.data;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const idx = (y * size + x) * 4;
+      const dx = x - cx;
+      const dy = y - cy;
+      const r = Math.hypot(dx, dy) / (size * 0.5); // 0..1 normalized radius
+      const theta = Math.atan2(dy, dx);
+
+      let nx = 0;
+      let ny = 0;
+      let roughVal = 175; // Default matte compression clay (~0.69 roughness)
+
+      if (r < 0.58) {
+        // Glossy laminated center inlay medallion
+        roughVal = 42; // ~0.16 roughness
+        // Subtle gold filigree ring at r ≈ 0.55..0.575
+        if (r > 0.545 && r < 0.578) {
+          roughVal = 28; // Metallic gold ring (~0.11 roughness)
+          const ringSlope = Math.sin(((r - 0.545) / 0.033) * Math.PI * 2) * 28;
+          nx += Math.cos(theta) * ringSlope;
+          ny += Math.sin(theta) * ringSlope;
+        }
+      } else if (r >= 0.58 && r <= 0.63) {
+        // Recessed inlay step bevel wall
+        roughVal = 110;
+        const stepSlope = 52;
+        nx -= Math.cos(theta) * stepSlope;
+        ny -= Math.sin(theta) * stepSlope;
+      } else if (r > 0.63 && r < 0.96) {
+        // Outer compression-molded clay ring with 12 radial mold notches + chalky micro-grain
+        const hash = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+        const grain = (hash - Math.floor(hash) - 0.5) * 18;
+        const moldNotch = Math.sin(theta * 12) * 20;
+        nx += -Math.sin(theta) * moldNotch + grain;
+        ny += Math.cos(theta) * moldNotch + grain;
+        roughVal = 184; // Matte clay (~0.72 roughness)
+      } else if (r >= 0.96) {
+        // Outer chamfered lip
+        nx += Math.cos(theta) * 46;
+        ny += Math.sin(theta) * 46;
+        roughVal = 150;
+      }
+
+      nData[idx] = Math.max(0, Math.min(255, Math.round(128 + nx)));
+      nData[idx + 1] = Math.max(0, Math.min(255, Math.round(128 + ny)));
+      nData[idx + 2] = 248;
+      nData[idx + 3] = 255;
+
+      rData[idx] = roughVal;
+      rData[idx + 1] = roughVal;
+      rData[idx + 2] = roughVal;
+      rData[idx + 3] = 255;
+    }
+  }
+
+  nCtx.putImageData(nImg, 0, 0);
+  rCtx.putImageData(rImg, 0, 0);
+
+  chipNormalCache = new THREE.CanvasTexture(norCanvas);
+  chipRoughnessCache = new THREE.CanvasTexture(roughCanvas);
+  chipNormalCache.anisotropy = 4;
+  chipRoughnessCache.anisotropy = 4;
+  return { normalMap: chipNormalCache, roughnessMap: chipRoughnessCache };
+}
+
+/**
+ * Creates 512x512 authentic compression-molded clay casino chip PBR textures (Face, Edge, Normal, Roughness)
+ */
+export function getChipTextures(denom: ChipDenomination): {
+  face: THREE.CanvasTexture;
+  edge: THREE.CanvasTexture;
+  normalMap: THREE.CanvasTexture;
+  roughnessMap: THREE.CanvasTexture;
+} {
   if (chipTextureCache.has(denom)) {
     return chipTextureCache.get(denom)!;
   }
 
   const faceCanvas = document.createElement('canvas');
-  faceCanvas.width = 256;
-  faceCanvas.height = 256;
+  faceCanvas.width = 512;
+  faceCanvas.height = 512;
   const fCtx = faceCanvas.getContext('2d')!;
 
-  let primaryColor = '#ffffff';
-  let stripeColor = '#3b82f6';
+  let primaryColor = '#f1f5f9';
+  let stripeColor = '#2563eb';
+  let accentTrimColor = '#1e3a8a';
   let textColor = '#0f172a';
   let valueLabel = '$1';
 
   switch (denom) {
     case 1:
       primaryColor = '#f1f5f9';
-      stripeColor = '#3b82f6';
+      stripeColor = '#2563eb';
+      accentTrimColor = '#93c5fd';
       textColor = '#0f172a';
       valueLabel = '$1';
       break;
     case 5:
-      primaryColor = '#dc2626';
-      stripeColor = '#ffffff';
-      textColor = '#ffffff';
+      primaryColor = '#b91c1c';
+      stripeColor = '#f8fafc';
+      accentTrimColor = '#fca5a5';
+      textColor = '#991b1b';
       valueLabel = '$5';
       break;
     case 25:
-      primaryColor = '#16a34a';
-      stripeColor = '#facc15';
-      textColor = '#ffffff';
+      primaryColor = '#15803d';
+      stripeColor = '#eab308';
+      accentTrimColor = '#fde047';
+      textColor = '#14532d';
       valueLabel = '$25';
       break;
     case 100:
-      primaryColor = '#1e293b';
+      primaryColor = '#111827';
       stripeColor = '#d4af37';
+      accentTrimColor = '#f3e5ab';
       textColor = '#f3e5ab';
       valueLabel = '$100';
       break;
   }
 
-  const cx = 128;
-  const cy = 128;
+  const cx = 256;
+  const cy = 256;
 
-  // Base circular body
+  // 1. Base circular compression-clay body
   fCtx.fillStyle = primaryColor;
   fCtx.beginPath();
-  fCtx.arc(cx, cy, 126, 0, Math.PI * 2);
+  fCtx.arc(cx, cy, 252, 0, Math.PI * 2);
   fCtx.fill();
 
-  // 6 Edge Inlay Stripes
+  // 2. 6 Two-Tone Edge Inlay Spots + 6 Recessed Clay Mold Pips
   for (let i = 0; i < 6; i++) {
     const angle = (i * Math.PI) / 3;
     fCtx.save();
     fCtx.translate(cx, cy);
     fCtx.rotate(angle);
     fCtx.fillStyle = stripeColor;
-    fCtx.fillRect(100, -14, 26, 28);
+    fCtx.fillRect(192, -30, 60, 60);
+    fCtx.fillStyle = accentTrimColor;
+    fCtx.fillRect(192, -10, 60, 20);
+    fCtx.restore();
+
+    // Recessed clay mold diamond pip between edge stripes
+    const midAngle = angle + Math.PI / 6;
+    fCtx.save();
+    fCtx.translate(cx + Math.cos(midAngle) * 204, cy + Math.sin(midAngle) * 204);
+    fCtx.rotate(midAngle + Math.PI / 4);
+    fCtx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
+    fCtx.lineWidth = 3;
+    fCtx.strokeRect(-10, -10, 20, 20);
     fCtx.restore();
   }
 
-  // Inner ring groove
-  fCtx.strokeStyle = 'rgba(0,0,0,0.2)';
-  fCtx.lineWidth = 3;
+  // 3. Outer chamfered bevel shadow ring
+  const outerBevelGrad = fCtx.createRadialGradient(cx, cy, 232, cx, cy, 254);
+  outerBevelGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  outerBevelGrad.addColorStop(1, 'rgba(0,0,0,0.42)');
+  fCtx.fillStyle = outerBevelGrad;
   fCtx.beginPath();
-  fCtx.arc(cx, cy, 95, 0, Math.PI * 2);
-  fCtx.stroke();
-
-  // Center inlay disc
-  fCtx.fillStyle = denom === 100 ? '#0f172a' : '#ffffff';
-  fCtx.beginPath();
-  fCtx.arc(cx, cy, 75, 0, Math.PI * 2);
+  fCtx.arc(cx, cy, 254, 0, Math.PI * 2);
   fCtx.fill();
 
-  // Golden accent ring
-  fCtx.strokeStyle = '#d4af37';
-  fCtx.lineWidth = 4;
+  // 4. Recessed inner well step shadow ring (at r ≈ 156px)
+  fCtx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+  fCtx.lineWidth = 8;
   fCtx.beginPath();
-  fCtx.arc(cx, cy, 73, 0, Math.PI * 2);
+  fCtx.arc(cx, cy, 156, 0, Math.PI * 2);
   fCtx.stroke();
 
-  // Denomination text
-  fCtx.fillStyle = denom === 100 ? '#f3e5ab' : textColor;
-  fCtx.font = 'bold 42px "Plus Jakarta Sans", sans-serif';
+  // 5. Center laminated inlay medallion disc
+  const inlayGrad = fCtx.createRadialGradient(cx - 24, cy - 24, 12, cx, cy, 152);
+  if (denom === 100) {
+    inlayGrad.addColorStop(0, '#1e293b');
+    inlayGrad.addColorStop(1, '#090c12');
+  } else {
+    inlayGrad.addColorStop(0, '#ffffff');
+    inlayGrad.addColorStop(1, '#f1f5f9');
+  }
+  fCtx.fillStyle = inlayGrad;
+  fCtx.beginPath();
+  fCtx.arc(cx, cy, 152, 0, Math.PI * 2);
+  fCtx.fill();
+
+  // 6. Double Champagne-Gold Filigree Inlay Bezel
+  fCtx.strokeStyle = '#d4af37';
+  fCtx.lineWidth = 7;
+  fCtx.beginPath();
+  fCtx.arc(cx, cy, 142, 0, Math.PI * 2);
+  fCtx.stroke();
+
+  fCtx.strokeStyle = 'rgba(212, 175, 55, 0.45)';
+  fCtx.lineWidth = 2.5;
+  fCtx.beginPath();
+  fCtx.arc(cx, cy, 130, 0, Math.PI * 2);
+  fCtx.stroke();
+
+  // 7. Crown emblem, Denomination typography & Salon Privé subtext
+  fCtx.fillStyle = '#d4af37';
+  fCtx.font = 'bold 26px Georgia, serif';
   fCtx.textAlign = 'center';
   fCtx.textBaseline = 'middle';
-  fCtx.fillText(valueLabel, cx, cy - 4);
+  fCtx.fillText('♛', cx, cy - 68);
 
-  // Subtext
-  fCtx.font = 'bold 12px "Plus Jakarta Sans", sans-serif';
-  fCtx.letterSpacing = '1px';
-  fCtx.fillStyle = '#d4af37';
-  fCtx.fillText('VIP CASINO', cx, cy + 30);
+  fCtx.fillStyle = denom === 100 ? '#f3e5ab' : textColor;
+  fCtx.font = 'bold 80px "Cinzel", "Plus Jakarta Sans", Georgia, serif';
+  fCtx.fillText(valueLabel, cx, cy - 2);
 
-  // Edge canvas for cylinder sides
+  fCtx.font = 'bold 20px "Plus Jakarta Sans", sans-serif';
+  fCtx.fillStyle = '#b48a2e';
+  fCtx.fillText('MONTE-CARLO', cx, cy + 56);
+
+  // 8. Edge canvas for cylinder sides + chamfer shadow bands
   const edgeCanvas = document.createElement('canvas');
   edgeCanvas.width = 512;
   edgeCanvas.height = 64;
@@ -253,23 +782,361 @@ export function getChipTextures(denom: ChipDenomination): { face: THREE.CanvasTe
   eCtx.fillStyle = primaryColor;
   eCtx.fillRect(0, 0, 512, 64);
 
-  // Repeating stripes on edge
   const numStripes = 6;
   const stripeW = 512 / (numStripes * 2);
-  eCtx.fillStyle = stripeColor;
   for (let i = 0; i < numStripes; i++) {
-    eCtx.fillRect(i * stripeW * 2, 0, stripeW, 64);
+    const sx = i * stripeW * 2;
+    eCtx.fillStyle = stripeColor;
+    eCtx.fillRect(sx, 0, stripeW, 64);
+    eCtx.fillStyle = accentTrimColor;
+    eCtx.fillRect(sx + stripeW * 0.33, 0, stripeW * 0.34, 64);
   }
+
+  // Top & bottom chamfer bevel shadow gradients on edge strip so stacked chips have crisp shadow grooves
+  const edgeBevelGrad = eCtx.createLinearGradient(0, 0, 0, 64);
+  edgeBevelGrad.addColorStop(0, 'rgba(0, 0, 0, 0.55)');
+  edgeBevelGrad.addColorStop(0.16, 'rgba(255, 255, 255, 0.12)');
+  edgeBevelGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0)');
+  edgeBevelGrad.addColorStop(0.84, 'rgba(0, 0, 0, 0.12)');
+  edgeBevelGrad.addColorStop(1, 'rgba(0, 0, 0, 0.62)');
+  eCtx.fillStyle = edgeBevelGrad;
+  eCtx.fillRect(0, 0, 512, 64);
 
   const faceTexture = new THREE.CanvasTexture(faceCanvas);
   const edgeTexture = new THREE.CanvasTexture(edgeCanvas);
-  faceTexture.anisotropy = 4;
-  edgeTexture.anisotropy = 4;
+  faceTexture.colorSpace = THREE.SRGBColorSpace;
+  edgeTexture.colorSpace = THREE.SRGBColorSpace;
+  faceTexture.anisotropy = 8;
+  edgeTexture.anisotropy = 8;
 
-  const result = { face: faceTexture, edge: edgeTexture };
+  const pbrMaps = getSharedChipPBRMaps();
+  const result = {
+    face: faceTexture,
+    edge: edgeTexture,
+    normalMap: pbrMaps.normalMap,
+    roughnessMap: pbrMaps.roughnessMap,
+  };
   chipTextureCache.set(denom, result);
   return result;
 }
+
+/**
+ * Builds the sculpted 3D compression-clay casino chip BufferGeometry matching Blender's Prototype_ClayChip:
+ * - Chamfered top/bottom outer lips (creates shadow grooves between stacked chips)
+ * - 12 subtle radial compression-mold relief waves on the outer clay rim
+ * - 0.28mm recessed center medallion inlay well
+ * - 2 material groups: Group 0 = side edge + outer chamfer (cylindrical UVs), Group 1 = top & bottom sculpted faces (planar UVs)
+ */
+export function createSculptedClayChipGeometry(
+  radius: number = 0.022,
+  height: number = 0.0045,
+  segments: number = 36
+): THREE.BufferGeometry {
+  if (sculptedChipGeometryCache && radius === 0.022 && height === 0.0045) {
+    return sculptedChipGeometryCache;
+  }
+
+  const halfH = height * 0.5;
+  const bevelH = halfH - 0.00055;
+  const wellH = halfH - 0.00028;
+
+  const rOuter = radius;
+  const rBevel = radius - 0.00065;
+  const rWellOuter = radius * 0.64;
+  const rWellInner = radius * 0.61;
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const edgeIndices: number[] = [];
+  const faceIndices: number[] = [];
+
+  const pushVertex = (
+    px: number,
+    py: number,
+    pz: number,
+    nx: number,
+    ny: number,
+    nz: number,
+    u: number,
+    v: number
+  ) => {
+    const idx = positions.length / 3;
+    positions.push(px, py, pz);
+    const len = Math.hypot(nx, ny, nz) || 1;
+    normals.push(nx / len, ny / len, nz / len);
+    uvs.push(u, v);
+    return idx;
+  };
+
+  // --- GROUP 0: Outer Cylindrical Wall + Top/Bottom Chamfer Bevels (uses sideMat / textures.edge) ---
+  const sideRings: Array<{ r: number; y: number; ny: number; nr: number; v: number }> = [
+    { r: rBevel, y: -halfH, ny: -0.65, nr: 0.76, v: 0.0 },
+    { r: rOuter, y: -bevelH, ny: -0.15, nr: 0.98, v: 0.16 },
+    { r: rOuter, y: bevelH, ny: 0.15, nr: 0.98, v: 0.84 },
+    { r: rBevel, y: halfH, ny: 0.65, nr: 0.76, v: 1.0 },
+  ];
+
+  const sideRingVerts: number[][] = [];
+  for (const sr of sideRings) {
+    const row: number[] = [];
+    for (let s = 0; s <= segments; s++) {
+      const u = s / segments;
+      const theta = u * Math.PI * 2;
+      const cosT = Math.cos(theta);
+      const sinT = Math.sin(theta);
+      row.push(
+        pushVertex(
+          cosT * sr.r,
+          sr.y,
+          sinT * sr.r,
+          cosT * sr.nr,
+          sr.ny,
+          sinT * sr.nr,
+          u,
+          sr.v
+        )
+      );
+    }
+    sideRingVerts.push(row);
+  }
+
+  for (let r = 0; r < sideRingVerts.length - 1; r++) {
+    for (let s = 0; s < segments; s++) {
+      const a = sideRingVerts[r][s];
+      const b = sideRingVerts[r][s + 1];
+      const c = sideRingVerts[r + 1][s + 1];
+      const d = sideRingVerts[r + 1][s];
+      edgeIndices.push(a, c, b, a, d, c);
+    }
+  }
+
+  // --- GROUP 1: Sculpted Top & Bottom Faces with Recessed Center Inlay Well (uses faceMat / textures.face) ---
+  for (const sign of [1, -1]) {
+    const centerIdx = pushVertex(0, sign * wellH, 0, 0, sign, 0, 0.5, 0.5);
+    const faceRadii = [
+      { r: rWellInner, y: sign * wellH, nr: sign * 0.25, ny: sign * 0.97, mold: false },
+      { r: rWellOuter, y: sign * halfH, nr: sign * -0.35, ny: sign * 0.94, mold: true },
+      { r: rBevel, y: sign * halfH, nr: sign * 0.18, ny: sign * 0.98, mold: true },
+    ];
+
+    const fRings: number[][] = [];
+    for (const fr of faceRadii) {
+      const row: number[] = [];
+      for (let s = 0; s < segments; s++) {
+        const theta = (s / segments) * Math.PI * 2;
+        const moldWave = fr.mold ? 0.00007 * Math.cos(theta * 12) : 0;
+        const rad = fr.r + moldWave;
+        const px = Math.cos(theta) * rad;
+        const pz = Math.sin(theta) * rad;
+        const u = px / (radius * 2) + 0.5;
+        const v = pz / (radius * 2) + 0.5;
+        row.push(
+          pushVertex(
+            px,
+            fr.y + sign * moldWave * 0.4,
+            pz,
+            Math.cos(theta) * fr.nr,
+            fr.ny,
+            Math.sin(theta) * fr.nr,
+            u,
+            v
+          )
+        );
+      }
+      fRings.push(row);
+    }
+
+    for (let s = 0; s < segments; s++) {
+      const nxt = (s + 1) % segments;
+      if (sign > 0) {
+        faceIndices.push(centerIdx, fRings[0][nxt], fRings[0][s]);
+      } else {
+        faceIndices.push(centerIdx, fRings[0][s], fRings[0][nxt]);
+      }
+      for (let r = 0; r < fRings.length - 1; r++) {
+        const a = fRings[r][s];
+        const b = fRings[r][nxt];
+        const c = fRings[r + 1][nxt];
+        const d = fRings[r + 1][s];
+        if (sign > 0) {
+          faceIndices.push(a, b, c, a, c, d);
+        } else {
+          faceIndices.push(a, c, b, a, d, c);
+        }
+      }
+    }
+  }
+
+  const allIndices = [...edgeIndices, ...faceIndices];
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(allIndices);
+  geo.clearGroups();
+  geo.addGroup(0, edgeIndices.length, 0);
+  geo.addGroup(edgeIndices.length, faceIndices.length, 1);
+
+  if (radius === 0.022 && height === 0.0045) {
+    sculptedChipGeometryCache = geo;
+  }
+  return geo;
+}
+
+/**
+ * Builds the poker-standard 86x122mm playing card BufferGeometry matching Blender's Prototype_PlayingCard:
+ * - 3.5mm rounded corners
+ * - 0.6mm longitudinal casino bridge camber arch (creates contact shadow and rolling specular highlight)
+ * - 3 material groups: Group 0 = beveled perimeter edge, Group 1 = top face (front), Group 2 = bottom face (back)
+ */
+export function createRoundedCamberedCardGeometry(
+  width: number = 0.086,
+  length: number = 0.122,
+  thickness: number = 0.0008,
+  cornerRadius: number = 0.0035,
+  camberHeight: number = 0.0006
+): THREE.BufferGeometry {
+  if (sculptedCardGeometryCache && width === 0.086 && length === 0.122) {
+    return sculptedCardGeometryCache;
+  }
+
+  const nx = 12;
+  const ny = 16;
+  const halfW = width * 0.5;
+  const halfL = length * 0.5;
+  const halfT = thickness * 0.5;
+
+  const clampRounded = (x: number, z: number): [number, number] => {
+    const cx = Math.max(-halfW + cornerRadius, Math.min(halfW - cornerRadius, x));
+    const cz = Math.max(-halfL + cornerRadius, Math.min(halfL - cornerRadius, z));
+    const dx = x - cx;
+    const dz = z - cz;
+    const dist = Math.hypot(dx, dz);
+    if (dist > cornerRadius && dist > 1e-6) {
+      return [cx + (dx / dist) * cornerRadius, cz + (dz / dist) * cornerRadius];
+    }
+    return [x, z];
+  };
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const edgeIndices: number[] = [];
+  const topIndices: number[] = [];
+  const botIndices: number[] = [];
+
+  const pushVert = (
+    px: number,
+    py: number,
+    pz: number,
+    nxVal: number,
+    nyVal: number,
+    nzVal: number,
+    u: number,
+    v: number
+  ) => {
+    const idx = positions.length / 3;
+    positions.push(px, py, pz);
+    const len = Math.hypot(nxVal, nyVal, nzVal) || 1;
+    normals.push(nxVal / len, nyVal / len, nzVal / len);
+    uvs.push(u, v);
+    return idx;
+  };
+
+  const topGrid: number[][] = [];
+  const botGrid: number[][] = [];
+
+  for (let iz = 0; iz <= ny; iz++) {
+    const tz = (iz / ny) * 2 - 1;
+    const rawZ = tz * halfL;
+    const tRow: number[] = [];
+    const bRow: number[] = [];
+
+    for (let ix = 0; ix <= nx; ix++) {
+      const tx = (ix / nx) * 2 - 1;
+      const rawX = tx * halfW;
+      const [px, pz] = clampRounded(rawX, rawZ);
+
+      // Smooth 0.6mm bridge camber arch across the card belly
+      const archX = Math.cos((px / halfW) * (Math.PI * 0.5));
+      const archZ = Math.cos((pz / halfL) * (Math.PI * 0.35));
+      const yArch = camberHeight * archX * archZ;
+
+      // Analytical normal tilt from bridge camber
+      const dArchDx =
+        -camberHeight *
+        (Math.PI / width) *
+        Math.sin((px / halfW) * (Math.PI * 0.5)) *
+        archZ;
+      const dArchDz =
+        -camberHeight *
+        ((Math.PI * 0.7) / length) *
+        archX *
+        Math.sin((pz / halfL) * (Math.PI * 0.35));
+
+      const uTop = px / width + 0.5;
+      const vTop = 1.0 - (pz / length + 0.5);
+      const uBot = 1.0 - uTop;
+      const vBot = vTop;
+
+      tRow.push(pushVert(px, halfT + yArch, pz, -dArchDx, 1.0, -dArchDz, uTop, vTop));
+      bRow.push(pushVert(px, -halfT + yArch, pz, dArchDx, -1.0, dArchDz, uBot, vBot));
+    }
+    topGrid.push(tRow);
+    botGrid.push(bRow);
+  }
+
+  for (let iz = 0; iz < ny; iz++) {
+    for (let ix = 0; ix < nx; ix++) {
+      const t00 = topGrid[iz][ix];
+      const t10 = topGrid[iz][ix + 1];
+      const t11 = topGrid[iz + 1][ix + 1];
+      const t01 = topGrid[iz + 1][ix];
+      topIndices.push(t00, t01, t11, t00, t11, t10);
+
+      const b00 = botGrid[iz][ix];
+      const b10 = botGrid[iz][ix + 1];
+      const b11 = botGrid[iz + 1][ix + 1];
+      const b01 = botGrid[iz + 1][ix];
+      botIndices.push(b00, b11, b01, b00, b10, b11);
+    }
+  }
+
+  // Beveled perimeter edge loop
+  const perimCoords: Array<[number, number]> = [];
+  for (let ix = 0; ix < nx; ix++) perimCoords.push([0, ix]);
+  for (let iz = 0; iz < ny; iz++) perimCoords.push([iz, nx]);
+  for (let ix = nx; ix > 0; ix--) perimCoords.push([ny, ix]);
+  for (let iz = ny; iz > 0; iz--) perimCoords.push([iz, 0]);
+
+  for (let i = 0; i < perimCoords.length; i++) {
+    const [iz0, ix0] = perimCoords[i];
+    const [iz1, ix1] = perimCoords[(i + 1) % perimCoords.length];
+    const tA = topGrid[iz0][ix0];
+    const tB = topGrid[iz1][ix1];
+    const bA = botGrid[iz0][ix0];
+    const bB = botGrid[iz1][ix1];
+    edgeIndices.push(bA, tB, tA, bA, bB, tB);
+  }
+
+  const allIndices = [...edgeIndices, ...topIndices, ...botIndices];
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(allIndices);
+  geo.clearGroups();
+  geo.addGroup(0, edgeIndices.length, 0);
+  geo.addGroup(edgeIndices.length, topIndices.length, 1);
+  geo.addGroup(edgeIndices.length + topIndices.length, botIndices.length, 2);
+
+  if (width === 0.086 && length === 0.122) {
+    sculptedCardGeometryCache = geo;
+  }
+  return geo;
+}
+
 
 /**
  * Creates 2048x2048 Monte Carlo Salon Prive wool-baize felt texture with hot-stamped gold-leaf
@@ -543,7 +1410,8 @@ export function getCofferedWallTexture(): THREE.CanvasTexture {
 
 
 /**
- * Draws or updates a 3D floating status & action speech plaque for an AI player
+ * Draws or updates a 3D floating status & action speech plaque for an AI player.
+ * Strictly adheres to the Monochrome Obsidian (#090c12) + Warm Ivory (#f8fafc) + Single Champagne Gold (#d4af37) rule.
  */
 export function drawAvatarPlaque(
   canvas: HTMLCanvasElement,
@@ -553,35 +1421,41 @@ export function drawAvatarPlaque(
   isTurn: boolean,
   folded: boolean,
   eliminated: boolean,
-  accentColor: string,
+  _accentColor: string,
   isDealer: boolean,
   tellLabel?: string,
   chatBubbleText?: string,
-  portraitImg?: HTMLImageElement | null
+  portraitImg?: HTMLImageElement | null,
+  positionLabel?: string,
+  hudStatsLabel?: string
 ) {
   const ctx = canvas.getContext('2d')!;
   const w = canvas.width;
   const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
-  // Dark luxury glass plaque background
+  // Monochrome Deep Obsidian Matte Glass Background
   ctx.fillStyle = eliminated
-    ? 'rgba(15, 23, 42, 0.55)'
+    ? 'rgba(9, 12, 18, 0.52)'
     : isTurn
-    ? 'rgba(30, 22, 10, 0.94)'
-    : 'rgba(10, 15, 28, 0.88)';
+    ? 'rgba(15, 20, 28, 0.96)'
+    : 'rgba(9, 12, 18, 0.92)';
   ctx.beginPath();
   ctx.roundRect(8, 8, w - 16, h - 16, 22);
   ctx.fill();
 
-  // Border (bright gold on active turn)
-  ctx.lineWidth = isTurn ? 6 : 3;
-  ctx.strokeStyle = isTurn ? '#facc15' : eliminated ? '#334155' : 'rgba(212, 175, 55, 0.45)';
+  // Outer Frame Border (Brushed Champagne Gold on active turn, subtle Gold/Slate otherwise)
+  ctx.lineWidth = isTurn ? 5 : 2.5;
+  ctx.strokeStyle = isTurn
+    ? '#f3e5ab'
+    : eliminated || folded
+    ? 'rgba(148, 163, 184, 0.25)'
+    : 'rgba(212, 175, 55, 0.45)';
   ctx.stroke();
 
   let leftOffset = 24;
 
-  // Optional 2D Nano Banana Portrait Medallion on the left of the 3D Plaque
+  // 2D Portrait Medallion on the left of the 3D Plaque
   if (portraitImg && portraitImg.complete && portraitImg.naturalWidth > 0) {
     const cx = 56;
     const cy = h / 2;
@@ -592,86 +1466,116 @@ export function drawAvatarPlaque(
     ctx.closePath();
     ctx.clip();
     if (eliminated || folded) {
-      ctx.filter = 'grayscale(85%) brightness(0.7)';
+      ctx.filter = 'grayscale(88%) brightness(0.68)';
     }
     ctx.drawImage(portraitImg, cx - r, cy - r, r * 2, r * 2);
     ctx.restore();
 
-    // Gold circular bezel around portrait
+    // Brushed Champagne Gold circular bezel around portrait
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.lineWidth = isTurn ? 4 : 2.5;
-    ctx.strokeStyle = isTurn ? '#facc15' : accentColor;
+    ctx.lineWidth = isTurn ? 3.5 : 2;
+    ctx.strokeStyle = isTurn ? '#f3e5ab' : '#d4af37';
     ctx.stroke();
 
-    leftOffset = 106;
+    leftOffset = 104;
   }
 
-  // Player Name + Dealer Badge
-  ctx.fillStyle = eliminated ? '#64748b' : accentColor;
-  ctx.font = 'bold 25px "Plus Jakarta Sans", sans-serif';
+  // Player Name (Warm Ivory)
+  const nameStr = name.toUpperCase();
+  ctx.fillStyle = eliminated || folded ? '#64748b' : '#f8fafc';
+  ctx.font = 'bold 22px "Cinzel", "Plus Jakarta Sans", Georgia, serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText(name, leftOffset, 38);
+  ctx.fillText(nameStr, leftOffset, 32);
+
+  // Position Badge (BTN / SB / BB / UTG / CO) right next to Player Name
+  if (positionLabel && !eliminated) {
+    const nameWidth = ctx.measureText(nameStr).width;
+    const badgeX = leftOffset + nameWidth + 10;
+    const badgeW = 44;
+    const badgeH = 22;
+    ctx.fillStyle = isDealer ? 'rgba(212, 175, 55, 0.28)' : 'rgba(30, 41, 59, 0.85)';
+    ctx.beginPath();
+    ctx.roundRect(badgeX, 21, badgeW, badgeH, 6);
+    ctx.fill();
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = isDealer ? '#f3e5ab' : 'rgba(212, 175, 55, 0.45)';
+    ctx.stroke();
+
+    ctx.fillStyle = isDealer ? '#f3e5ab' : '#cbd5e1';
+    ctx.font = 'bold 12px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(positionLabel, badgeX + badgeW / 2, 32.5);
+  }
 
   if (tellLabel && !eliminated) {
-    ctx.fillStyle = tellLabel.includes('PHONE DOWN') ? '#fde047' : '#94a3b8';
-    ctx.font = 'bold 15px "Plus Jakarta Sans", sans-serif';
+    ctx.fillStyle = isTurn ? '#f3e5ab' : '#94a3b8';
+    ctx.font = '600 13px "Plus Jakarta Sans", sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText(tellLabel, isDealer ? w - 70 : w - 22, 38);
+    ctx.fillText(tellLabel, isDealer ? w - 64 : w - 20, 32);
   }
 
   if (isDealer && !eliminated) {
-    ctx.fillStyle = '#facc15';
+    ctx.fillStyle = '#d4af37';
     ctx.beginPath();
-    ctx.arc(w - 38, 38, 17, 0, Math.PI * 2);
+    ctx.arc(w - 34, 32, 15, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 19px "Plus Jakarta Sans", sans-serif';
+    ctx.fillStyle = '#090c12';
+    ctx.font = 'bold 16px "Cinzel", Georgia, serif';
     ctx.textAlign = 'center';
-    ctx.fillText('D', w - 38, 39);
+    ctx.fillText('D', w - 34, 33);
   }
 
-  // Stack Readout
-  ctx.fillStyle = eliminated ? '#ef4444' : '#fde047';
-  ctx.font = 'bold 26px monospace';
+  // Stack Readout (Brushed Champagne Gold)
+  ctx.fillStyle = eliminated ? '#64748b' : '#d4af37';
+  ctx.font = 'bold 24px "JetBrains Mono", monospace';
   ctx.textAlign = 'left';
-  ctx.fillText(eliminated ? 'OUT' : `$${chips}`, leftOffset, 84);
+  ctx.fillText(eliminated ? 'OUT' : `$${chips.toLocaleString()}`, leftOffset, 72);
 
-  // Speech / Action Pill on right (or live Chit-Chat remark if active)
-  const pillX = Math.max(leftOffset + 96, 198);
+  // VPIP / PFR / AF Telemetry Sub-Row on 3D Plaque
+  if (hudStatsLabel && !eliminated) {
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '600 12px "JetBrains Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(hudStatsLabel, leftOffset, 105);
+  }
+
+  // Speech / Action Pill on right (Monochrome Obsidian + Champagne Gold)
+  const pillX = Math.max(leftOffset + 104, 212);
   const pillW = w - pillX - 18;
   const displaySpeech = chatBubbleText ? `"${chatBubbleText}"` : actionText;
-  ctx.fillStyle = chatBubbleText
-    ? 'rgba(20, 83, 45, 0.92)'
+  ctx.fillStyle = isTurn
+    ? 'rgba(212, 175, 55, 0.22)'
     : folded
-    ? 'rgba(127, 29, 29, 0.6)'
-    : isTurn
-    ? 'rgba(234, 179, 8, 0.25)'
-    : 'rgba(30, 41, 59, 0.9)';
+    ? 'rgba(15, 20, 28, 0.65)'
+    : 'rgba(15, 20, 28, 0.92)';
   ctx.beginPath();
-  ctx.roundRect(pillX, 62, pillW, 44, 12);
+  ctx.roundRect(pillX, 54, pillW, 42, 11);
   ctx.fill();
 
-  ctx.fillStyle = chatBubbleText
-    ? '#bbf7d0'
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = isTurn
+    ? '#f3e5ab'
     : folded
-    ? '#fca5a5'
-    : isTurn
-    ? '#fef08a'
-    : '#e2e8f0';
+    ? 'rgba(148, 163, 184, 0.22)'
+    : 'rgba(212, 175, 55, 0.38)';
+  ctx.stroke();
+
+  ctx.fillStyle = folded ? '#94a3b8' : isTurn ? '#f3e5ab' : '#f8fafc';
   ctx.font = chatBubbleText
-    ? 'italic bold 15px "Plus Jakarta Sans", sans-serif'
-    : 'bold 19px "Plus Jakarta Sans", sans-serif';
+    ? 'italic 600 14px "Plus Jakarta Sans", sans-serif'
+    : 'bold 17px "Plus Jakarta Sans", sans-serif';
   ctx.textAlign = 'center';
-  const maxChars = portraitImg ? 24 : 32;
+  const maxChars = portraitImg ? 22 : 30;
   const truncated =
     displaySpeech.length > maxChars ? displaySpeech.slice(0, maxChars - 2) + '…"' : displaySpeech;
-  ctx.fillText(truncated, pillX + pillW / 2, 84);
+  ctx.fillText(truncated, pillX + pillW / 2, 75);
 }
 
 /**
- * Draws a 3D on-felt street bet pill/plaque next to a player's wagered chip stack
+ * Draws a 3D on-felt street bet pill/plaque next to a player's wagered chip stack.
+ * Monochrome Obsidian surface with Brushed Champagne Gold border.
  */
 export function drawOnFeltBetBadge(
   canvas: HTMLCanvasElement,
@@ -685,33 +1589,34 @@ export function drawOnFeltBetBadge(
 
   if (amount <= 0) return;
 
-  ctx.fillStyle = isAllIn ? 'rgba(127, 29, 29, 0.94)' : 'rgba(6, 24, 18, 0.92)';
+  ctx.fillStyle = isAllIn ? 'rgba(20, 16, 10, 0.96)' : 'rgba(9, 12, 18, 0.92)';
   ctx.beginPath();
   ctx.roundRect(6, 6, w - 12, h - 12, 24);
   ctx.fill();
 
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = isAllIn ? '#f87171' : '#facc15';
+  ctx.lineWidth = isAllIn ? 4.5 : 3;
+  ctx.strokeStyle = isAllIn ? '#f3e5ab' : '#d4af37';
   ctx.stroke();
 
-  // Mini chip icon on left
-  ctx.fillStyle = isAllIn ? '#ef4444' : '#facc15';
+  // Mini gold chip icon on left
+  ctx.fillStyle = '#d4af37';
   ctx.beginPath();
-  ctx.arc(32, h / 2, 13, 0, Math.PI * 2);
+  ctx.arc(32, h / 2, 12, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = '#0f172a';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#f8fafc';
+  ctx.lineWidth = 1.8;
   ctx.stroke();
 
-  ctx.fillStyle = '#fef08a';
-  ctx.font = 'bold 26px monospace';
+  ctx.fillStyle = isAllIn ? '#f3e5ab' : '#f8fafc';
+  ctx.font = 'bold 25px "JetBrains Mono", monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(isAllIn ? `ALL-IN $${amount}` : `$${amount}`, w / 2 + 12, h / 2 + 1);
 }
 
 /**
- * Draws a 3D world-anchored Spatial HUD button texture for WebXR & Desktop table rim
+ * Draws a 3D world-anchored Spatial HUD button texture for WebXR & Desktop table rim.
+ * Strictly adheres to the Monochrome Obsidian + Single Champagne Gold Accent system.
  */
 export function drawSpatialButton(
   canvas: HTMLCanvasElement,
@@ -726,39 +1631,41 @@ export function drawSpatialButton(
   const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
-  const bgMap = {
-    fold: hovered ? 'rgba(127, 29, 29, 0.98)' : 'rgba(69, 10, 10, 0.92)',
-    call: hovered ? 'rgba(30, 58, 138, 0.98)' : 'rgba(23, 37, 84, 0.92)',
-    raise: hovered ? 'rgba(146, 64, 14, 0.98)' : 'rgba(120, 53, 15, 0.95)',
-    confirm: hovered ? 'rgba(6, 95, 70, 0.98)' : 'rgba(6, 78, 59, 0.95)',
-    neutral: hovered ? 'rgba(30, 41, 59, 0.98)' : 'rgba(15, 23, 42, 0.9)',
-  };
-  const borderMap = {
-    fold: hovered ? '#fca5a5' : '#ef4444',
-    call: hovered ? '#93c5fd' : '#60a5fa',
-    raise: hovered ? '#fef08a' : '#facc15',
-    confirm: hovered ? '#6ee7b7' : '#34d399',
-    neutral: hovered ? '#fde047' : '#d4af37',
-  };
+  const isGoldVariant = variant === 'raise' || variant === 'confirm' || variant === 'call';
+  const bg = disabled
+    ? 'rgba(9, 12, 18, 0.45)'
+    : hovered
+    ? 'rgba(212, 175, 55, 0.24)'
+    : isGoldVariant
+    ? 'rgba(15, 20, 28, 0.95)'
+    : 'rgba(9, 12, 18, 0.92)';
 
-  ctx.fillStyle = disabled ? 'rgba(15, 23, 42, 0.45)' : bgMap[variant];
+  const border = disabled
+    ? 'rgba(148, 163, 184, 0.2)'
+    : hovered
+    ? '#f3e5ab'
+    : isGoldVariant
+    ? '#d4af37'
+    : 'rgba(148, 163, 184, 0.38)';
+
+  ctx.fillStyle = bg;
   ctx.beginPath();
   ctx.roundRect(6, 6, w - 12, h - 12, 18);
   ctx.fill();
 
-  ctx.lineWidth = hovered && !disabled ? 6 : 4;
-  ctx.strokeStyle = disabled ? '#334155' : borderMap[variant];
+  ctx.lineWidth = hovered && !disabled ? 5 : 3;
+  ctx.strokeStyle = border;
   ctx.stroke();
 
-  ctx.fillStyle = disabled ? '#64748b' : '#ffffff';
-  ctx.font = 'bold 28px "Plus Jakarta Sans", sans-serif';
+  ctx.fillStyle = disabled ? '#64748b' : variant === 'raise' ? '#f3e5ab' : '#f8fafc';
+  ctx.font = 'bold 26px "Cinzel", "Plus Jakarta Sans", serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(label, w / 2, sublabel ? h / 2 - 14 : h / 2);
+  ctx.fillText(label.toUpperCase(), w / 2, sublabel ? h / 2 - 14 : h / 2);
 
   if (sublabel) {
-    ctx.fillStyle = disabled ? '#475569' : borderMap[variant];
-    ctx.font = 'bold 20px monospace';
+    ctx.fillStyle = disabled ? '#475569' : '#d4af37';
+    ctx.font = 'bold 19px "JetBrains Mono", monospace';
     ctx.fillText(sublabel, w / 2, h / 2 + 20);
   }
 }
@@ -802,30 +1709,186 @@ export function getPhoneScreenTexture(): THREE.CanvasTexture {
 export type CharacterModelRole = 'dealer' | 'viktor' | 'elena' | 'bao' | 'marcus';
 
 /**
- * Populates a 3D character's torsoGroup and headGroup with sculpted 3D facial features
- * (eyes, irises, pupils, eyebrows, nose, mouth, ears, hair, eyewear, beard)
- * and tailored 3D clothing details (collars, ties, lapels, gowns, jackets, jewelry).
+ * Creates a lifelike PBR skin material with warm subsurface sheen and subtle oil clearcoat.
+ */
+export function createRealisticSkinMaterial(hexColor: string): THREE.MeshPhysicalMaterial {
+  return new THREE.MeshPhysicalMaterial({
+    color: hexColor,
+    roughness: 0.48,
+    metalness: 0.02,
+    sheen: 0.38,
+    sheenRoughness: 0.65,
+    sheenColor: new THREE.Color('#f59e7a'),
+    clearcoat: 0.08,
+    clearcoatRoughness: 0.45,
+    reflectivity: 0.35,
+  });
+}
+
+/**
+ * Builds an articulated forearm, wrist, palm, and 5 sculpted fingers (replacing primitive sphere hands).
+ * Exposes finger Group references on userData for subtle idle finger curl animations.
+ */
+export function buildArticulatedForearmAndHand(
+  skinMat: THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial,
+  sleeveMat: THREE.MeshStandardMaterial,
+  side: 'left' | 'right',
+  role: CharacterModelRole,
+  goldMat?: THREE.MeshStandardMaterial
+): THREE.Group {
+  const armGroup = new THREE.Group();
+  const dir = side === 'left' ? -1 : 1;
+
+  // 1. Tailored Sleeve Forearm + White Dress Cuff
+  if (role !== 'elena') {
+    const forearmGeo = new THREE.CapsuleGeometry(0.032, 0.14, 10, 14);
+    forearmGeo.rotateX(Math.PI / 2.3);
+    const forearm = new THREE.Mesh(forearmGeo, sleeveMat);
+    forearm.position.set(0, 0.045, -0.085);
+    armGroup.add(forearm);
+
+    const cuffMat = new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.38 });
+    const cuffGeo = new THREE.CylinderGeometry(0.029, 0.031, 0.026, 14);
+    cuffGeo.rotateX(Math.PI / 2.1);
+    const cuff = new THREE.Mesh(cuffGeo, cuffMat);
+    cuff.position.set(0, 0.014, -0.022);
+    armGroup.add(cuff);
+
+    // Luxury wristwatch on left wrist for Viktor, Marcus, or Dealer
+    if (side === 'left' && goldMat && (role === 'viktor' || role === 'marcus' || role === 'dealer')) {
+      const watchBand = new THREE.Mesh(new THREE.TorusGeometry(0.027, 0.0045, 8, 18), goldMat);
+      watchBand.rotation.x = Math.PI / 2.1;
+      watchBand.position.set(0, 0.009, -0.008);
+      armGroup.add(watchBand);
+    }
+  } else {
+    // Bare sculpted forearm for Elena's evening gown + gold bracelet
+    const bareForearmGeo = new THREE.CapsuleGeometry(0.025, 0.13, 10, 14);
+    bareForearmGeo.rotateX(Math.PI / 2.3);
+    const bareForearm = new THREE.Mesh(bareForearmGeo, skinMat);
+    bareForearm.position.set(0, 0.042, -0.08);
+    armGroup.add(bareForearm);
+
+    if (goldMat && side === 'right') {
+      const bangle = new THREE.Mesh(new THREE.TorusGeometry(0.026, 0.0035, 8, 18), goldMat);
+      bangle.rotation.x = Math.PI / 2.1;
+      bangle.position.set(0, 0.012, -0.015);
+      armGroup.add(bangle);
+    }
+  }
+
+  // 2. Sculpted Wrist & Metacarpal Palm
+  const handGroup = new THREE.Group();
+  const palmGeo = new THREE.BoxGeometry(0.052, 0.020, 0.056);
+  const palm = new THREE.Mesh(palmGeo, skinMat);
+  palm.position.set(0, 0, 0.018);
+  handGroup.add(palm);
+
+  // Rounded Knuckle Bridge
+  const knuckleBridgeGeo = new THREE.CapsuleGeometry(0.009, 0.038, 6, 10);
+  knuckleBridgeGeo.rotateZ(Math.PI / 2);
+  const knuckleBridge = new THREE.Mesh(knuckleBridgeGeo, skinMat);
+  knuckleBridge.position.set(0, 0.003, 0.046);
+  handGroup.add(knuckleBridge);
+
+  // 3. Five Articulated Fingers (Thumb + Index, Middle, Ring, Pinky)
+  const fingers: THREE.Group[] = [];
+  const fingerSpecs = [
+    { x: dir * -0.019, len: 0.034, rad: 0.0058, curl: 0.28 }, // Index
+    { x: dir * -0.006, len: 0.038, rad: 0.0060, curl: 0.32 }, // Middle
+    { x: dir * 0.007, len: 0.035, rad: 0.0056, curl: 0.36 },  // Ring
+    { x: dir * 0.019, len: 0.028, rad: 0.0050, curl: 0.42 },  // Pinky
+  ];
+
+  fingerSpecs.forEach((spec) => {
+    const fGroup = new THREE.Group();
+    fGroup.position.set(spec.x, 0.002, 0.046);
+    fGroup.rotation.x = spec.curl;
+
+    // Proximal + Distal Phalanges combined in a naturally curved two-segment finger
+    const proxGeo = new THREE.CapsuleGeometry(spec.rad, spec.len * 0.55, 6, 8);
+    proxGeo.rotateX(Math.PI / 2);
+    const prox = new THREE.Mesh(proxGeo, skinMat);
+    prox.position.set(0, 0, spec.len * 0.32);
+    fGroup.add(prox);
+
+    const distGeo = new THREE.CapsuleGeometry(spec.rad * 0.86, spec.len * 0.45, 6, 8);
+    distGeo.rotateX(Math.PI / 2);
+    const dist = new THREE.Mesh(distGeo, skinMat);
+    dist.position.set(0, -0.004, spec.len * 0.78);
+    dist.rotation.x = 0.25;
+    fGroup.add(dist);
+
+    handGroup.add(fGroup);
+    fingers.push(fGroup);
+  });
+
+  // Opposable Thumb
+  const thumbGroup = new THREE.Group();
+  thumbGroup.position.set(dir * -0.027, -0.002, 0.022);
+  thumbGroup.rotation.set(0.22, dir * -0.48, dir * 0.25);
+  const thumbGeo = new THREE.CapsuleGeometry(0.0065, 0.026, 6, 8);
+  thumbGeo.rotateX(Math.PI / 2);
+  const thumbMesh = new THREE.Mesh(thumbGeo, skinMat);
+  thumbMesh.position.set(0, 0, 0.016);
+  thumbGroup.add(thumbMesh);
+  handGroup.add(thumbGroup);
+  fingers.push(thumbGroup);
+
+  armGroup.add(handGroup);
+  armGroup.userData.handGroup = handGroup;
+  armGroup.userData.fingers = fingers;
+  armGroup.userData.anatomicalPartCount = 8;
+  return armGroup;
+}
+
+/**
+ * Populates a 3D character's torsoGroup and headGroup with sculpted 3D facial anatomy
+ * (brow ridge, cheekbones, nose bridge & alae, philtrum/lips, cornea clearcoat eyes,
+ * animated upper/lower eyelids, eye-gaze saccade rig, ears, hair, eyewear, beard)
+ * and tailored 3D clothing details.
  */
 export function populate3DCharacterHeadAndTorso(
   role: CharacterModelRole,
   torsoGroup: THREE.Group,
   headGroup: THREE.Group,
-  skinMat: THREE.MeshStandardMaterial,
+  skinMat: THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial,
   suitMat: THREE.MeshStandardMaterial,
   goldMat: THREE.MeshStandardMaterial
 ): void {
   const r = role === 'bao' ? 0.106 : role === 'dealer' ? 0.102 : 0.095;
 
+  // Upgrade skinMat in-place or ensure physical properties for realistic subsurface sheen
+  if ('sheen' in skinMat) {
+    skinMat.sheen = 0.38;
+    skinMat.sheenRoughness = 0.65;
+    skinMat.sheenColor = new THREE.Color('#f59e7a');
+    skinMat.clearcoat = 0.08;
+    skinMat.clearcoatRoughness = 0.45;
+  }
+
   // Elongate head slightly for natural 3D cranial/jaw proportions
   headGroup.scale.set(role === 'bao' ? 1.05 : 0.95, 1.08, 0.97);
 
-  // Shared materials
-  const scleraMat = new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.22 });
-  const pupilMat = new THREE.MeshStandardMaterial({ color: '#090d16', roughness: 0.12 });
-  const whiteShirtMat = new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.4 });
-  const noseMat = new THREE.MeshStandardMaterial({
-    color: skinMat.color.clone().multiplyScalar(0.91),
-    roughness: 0.42,
+  // Cornea Clearcoat Sclera & Wet Eye Materials
+  const scleraMat = new THREE.MeshPhysicalMaterial({
+    color: '#f8fafc',
+    roughness: 0.08,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.03,
+    reflectivity: 0.9,
+  });
+  const pupilMat = new THREE.MeshStandardMaterial({ color: '#090c12', roughness: 0.08 });
+  const catchlightMat = new THREE.MeshBasicMaterial({ color: '#ffffff' });
+  const whiteShirtMat = new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.38 });
+  const noseMat = new THREE.MeshPhysicalMaterial({
+    color: skinMat.color.clone().multiplyScalar(0.93),
+    roughness: 0.38,
+    sheen: 0.42,
+    sheenRoughness: 0.6,
+    sheenColor: new THREE.Color('#f59e7a'),
+    clearcoat: 0.14,
+    clearcoatRoughness: 0.35,
   });
 
   const irisColorMap: Record<CharacterModelRole, string> = {
@@ -835,14 +1898,19 @@ export function populate3DCharacterHeadAndTorso(
     bao: '#1e1b18',    // dark espresso
     marcus: '#78350f', // warm hazel
   };
-  const irisMat = new THREE.MeshStandardMaterial({ color: irisColorMap[role], roughness: 0.18 });
+  const irisMat = new THREE.MeshPhysicalMaterial({
+    color: irisColorMap[role],
+    roughness: 0.14,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.04,
+  });
 
   const hairColorMap: Record<CharacterModelRole, string> = {
     dealer: '#1c1917',
-    viktor: '#27272a', // dark charcoal with silver temples
-    elena: '#181311',  // glossy espresso
-    bao: '#0f172a',    // jet black
-    marcus: '#291d16', // rich dark chestnut
+    viktor: '#27272a',
+    elena: '#181311',
+    bao: '#0f172a',
+    marcus: '#291d16',
   };
   const hairMat = new THREE.MeshStandardMaterial({
     color: hairColorMap[role],
@@ -850,9 +1918,9 @@ export function populate3DCharacterHeadAndTorso(
     metalness: 0.08,
   });
 
-  // 0. Sculpted 3D Lateral Deltoids & Rounded Shoulders Bridge (tucked in Z so it never pokes through chest garments)
+  // 0. Sculpted 3D Lateral Deltoids & Rounded Shoulders Bridge
   const bustRadius = role === 'dealer' ? 0.152 : 0.132;
-  const shoulderBustGeo = new THREE.SphereGeometry(bustRadius, 32, 24);
+  const shoulderBustGeo = new THREE.SphereGeometry(bustRadius, 28, 20);
   const bustScaleX = role === 'bao' ? 1.66 : role === 'elena' ? 1.08 : 1.32;
   const bustScaleY = role === 'dealer' ? 0.62 : 0.58;
   const bustScaleZ = role === 'bao' ? 0.98 : role === 'elena' ? 0.72 : 0.74;
@@ -864,31 +1932,45 @@ export function populate3DCharacterHeadAndTorso(
   shoulderBust.position.set(0, role === 'dealer' ? 0.41 : 0.37, -0.01);
   torsoGroup.add(shoulderBust);
 
-  // For Elena's off-shoulder evening gown, add a sculpted velvet bustier below her collarbone
   if (role === 'elena') {
-    const gownBustGeo = new THREE.SphereGeometry(0.132, 32, 20);
+    const gownBustGeo = new THREE.SphereGeometry(0.132, 28, 18);
     gownBustGeo.scale(1.06, 0.55, 0.88);
     const gownBust = new THREE.Mesh(gownBustGeo, suitMat);
     gownBust.position.set(0, 0.33, 0.008);
     torsoGroup.add(gownBust);
   }
 
-  // 1. Sculpted Neck & Jaw Chin Contour connecting torso and head
+  // 1. Sculpted Neck, Sternocleidomastoid Contour & Jawline Chin
   const neckRadius = role === 'bao' ? 0.056 : role === 'elena' ? 0.038 : 0.045;
-  const neckGeo = new THREE.CylinderGeometry(neckRadius, neckRadius * 1.18, 0.15, 24);
+  const neckGeo = new THREE.CylinderGeometry(neckRadius, neckRadius * 1.18, 0.15, 20);
   const neckMesh = new THREE.Mesh(neckGeo, skinMat);
   neckMesh.position.set(0, -r * 0.88, -0.005);
   headGroup.add(neckMesh);
 
-  // Sculpted Chin / Jawline rounded taper
-  const chinGeo = new THREE.SphereGeometry(r * 0.54, 24, 18);
+  const chinGeo = new THREE.SphereGeometry(r * 0.54, 20, 16);
   chinGeo.scale(role === 'elena' ? 0.86 : 1.0, 0.64, 0.82);
   const chinMesh = new THREE.Mesh(chinGeo, skinMat);
   chinMesh.position.set(0, -r * 0.52, r * 0.28);
   headGroup.add(chinMesh);
 
+  // 1b. Anatomical Zygomatic Cheekbones & Supraorbital Brow Ridge
+  const cheekboneGeo = new THREE.SphereGeometry(r * 0.34, 16, 14);
+  cheekboneGeo.scale(0.95, 0.58, 0.68);
+  [-1, 1].forEach((dir) => {
+    const cheekbone = new THREE.Mesh(cheekboneGeo, skinMat);
+    cheekbone.position.set(dir * (r * 0.48), -r * 0.06, r * 0.66);
+    cheekbone.rotation.y = dir * 0.28;
+    headGroup.add(cheekbone);
+  });
+
+  const browRidgeGeo = new THREE.CapsuleGeometry(r * 0.095, r * 0.62, 8, 12);
+  browRidgeGeo.rotateZ(Math.PI / 2);
+  const browRidge = new THREE.Mesh(browRidgeGeo, skinMat);
+  browRidge.position.set(0, r * 0.25, r * 0.82);
+  headGroup.add(browRidge);
+
   // 2. Sculpted 3D Ears (Left & Right)
-  const earGeo = new THREE.SphereGeometry(r * 0.22, 16, 16);
+  const earGeo = new THREE.SphereGeometry(r * 0.22, 14, 14);
   earGeo.scale(0.42, 0.85, 0.58);
   const leftEar = new THREE.Mesh(earGeo, skinMat);
   leftEar.position.set(-r * 0.96, -0.01, -0.01);
@@ -896,30 +1978,42 @@ export function populate3DCharacterHeadAndTorso(
   rightEar.position.set(r * 0.96, -0.01, -0.01);
   headGroup.add(leftEar, rightEar);
 
-  // 3. Sculpted 3D Nose Bridge & Rounded Tip (shaded for crisp 3D depth)
+  // 3. Sculpted 3D Nose Bridge, Rounded Tip & Left/Right Nasal Alae (Nostrils)
   const noseBridgeGeo = new THREE.CapsuleGeometry(
     role === 'bao' ? 0.0115 : role === 'elena' ? 0.0088 : 0.01,
-    0.025,
+    0.026,
     10,
-    14
+    12
   );
   const noseMesh = new THREE.Mesh(noseBridgeGeo, noseMat);
   noseMesh.position.set(0, 0.004, r * 0.985);
   noseMesh.rotation.x = -0.2;
   headGroup.add(noseMesh);
 
-  // 4. Sculpted 3D Eyes (Sclera + Iris + Pupil + Upper Eyelid Hood)
+  const alaGeo = new THREE.SphereGeometry(0.0072, 10, 10);
+  alaGeo.scale(1.1, 0.78, 0.9);
+  [-1, 1].forEach((dir) => {
+    const ala = new THREE.Mesh(alaGeo, noseMat);
+    ala.position.set(dir * 0.0088, -0.011, r * 0.98);
+    headGroup.add(ala);
+  });
+
+  // 4. Sculpted 3D Eyes with Animated Eyelids & Gaze-Tracking Iris Rig
   const eyeX = r * 0.34;
   const eyeY = r * 0.12;
   const eyeZ = r * 0.88;
-  const scleraGeo = new THREE.SphereGeometry(0.015, 18, 18);
+  const scleraGeo = new THREE.SphereGeometry(0.015, 16, 16);
   scleraGeo.scale(1.18, 0.85, 0.55);
-  const irisGeo = new THREE.SphereGeometry(0.009, 16, 16);
+  const irisGeo = new THREE.SphereGeometry(0.009, 14, 14);
   irisGeo.scale(1.0, 1.0, 0.42);
-  const pupilGeo = new THREE.SphereGeometry(0.005, 14, 14);
+  const pupilGeo = new THREE.SphereGeometry(0.005, 12, 12);
   pupilGeo.scale(1.0, 1.0, 0.42);
-  const eyelidGeo = new THREE.SphereGeometry(0.0165, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.48);
-  eyelidGeo.scale(1.2, 0.86, 0.62);
+  const catchlightGeo = new THREE.SphereGeometry(0.0019, 8, 8);
+  const eyelidGeo = new THREE.SphereGeometry(0.0168, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.52);
+  eyelidGeo.scale(1.22, 0.88, 0.64);
+
+  const eyeLids: THREE.Mesh[] = [];
+  const irisGroups: THREE.Group[] = [];
 
   [-1, 1].forEach((dir) => {
     const eyeGroup = new THREE.Group();
@@ -927,19 +2021,29 @@ export function populate3DCharacterHeadAndTorso(
     eyeGroup.rotation.y = dir * 0.16;
 
     const sclera = new THREE.Mesh(scleraGeo, scleraMat);
+
+    // Gaze-tracking iris + pupil + corneal catchlight group
+    const irisGroup = new THREE.Group();
     const iris = new THREE.Mesh(irisGeo, irisMat);
     iris.position.set(0, 0, 0.0072);
     const pupil = new THREE.Mesh(pupilGeo, pupilMat);
     pupil.position.set(0, 0, 0.0098);
+    const catchlight = new THREE.Mesh(catchlightGeo, catchlightMat);
+    catchlight.position.set(0.0028, 0.0028, 0.0112);
+    irisGroup.add(iris, pupil, catchlight);
 
     const eyelid = new THREE.Mesh(eyelidGeo, skinMat);
-    eyelid.rotation.x = role === 'viktor' ? 0.22 : 0.12;
+    const baseLidRotX = role === 'viktor' ? 0.22 : 0.12;
+    eyelid.rotation.x = baseLidRotX;
+    eyelid.userData.baseRotX = baseLidRotX;
     eyelid.position.set(0, 0.002, 0.001);
 
-    eyeGroup.add(sclera, iris, pupil, eyelid);
+    eyeGroup.add(sclera, irisGroup, eyelid);
+    eyeLids.push(eyelid);
+    irisGroups.push(irisGroup);
 
     if (role === 'elena') {
-      const lashGeo = new THREE.CapsuleGeometry(0.0022, 0.028, 6, 10);
+      const lashGeo = new THREE.CapsuleGeometry(0.0022, 0.028, 6, 8);
       lashGeo.rotateZ(Math.PI / 2);
       const lash = new THREE.Mesh(lashGeo, pupilMat);
       lash.position.set(dir * 0.002, 0.008, 0.006);
@@ -949,10 +2053,18 @@ export function populate3DCharacterHeadAndTorso(
     headGroup.add(eyeGroup);
   });
 
-  // 5. Sculpted 3D Eyebrows (Smooth Capsules)
+  // Expose live eyelid and gaze saccade rigs on headGroup.userData for CasinoScene animation loop
+  headGroup.userData.leftEyeLid = eyeLids[0];
+  headGroup.userData.rightEyeLid = eyeLids[1];
+  headGroup.userData.leftIrisGroup = irisGroups[0];
+  headGroup.userData.rightIrisGroup = irisGroups[1];
+  headGroup.userData.hasRealisticFacialRig = true;
+
+  // 5. Sculpted 3D Eyebrows
   const browRadius = role === 'elena' ? 0.0032 : 0.0045;
-  const browGeo = new THREE.CapsuleGeometry(browRadius, 0.026, 8, 12);
+  const browGeo = new THREE.CapsuleGeometry(browRadius, 0.026, 8, 10);
   browGeo.rotateZ(Math.PI / 2);
+  const brows: THREE.Mesh[] = [];
   [-1, 1].forEach((dir) => {
     const brow = new THREE.Mesh(browGeo, hairMat);
     brow.position.set(dir * eyeX, eyeY + 0.023, eyeZ + 0.005);
@@ -964,34 +2076,38 @@ export function populate3DCharacterHeadAndTorso(
     } else if (role === 'marcus') {
       brow.rotation.z = dir === 1 ? -0.14 : 0.05;
     }
+    brows.push(brow);
     headGroup.add(brow);
   });
+  headGroup.userData.brows = brows;
 
-  // 6. Sculpted 3D Mouth / Lips (positioned outside the head surface at z = r * 0.965)
+  // 6. Sculpted 3D Mouth / Upper & Lower Lips
   const lipColorMap: Record<CharacterModelRole, string> = {
     dealer: '#9a5b4a',
     viktor: '#8c5343',
-    elena: '#be123c', // rich crimson rose
+    elena: '#be123c',
     bao: '#8f5542',
     marcus: '#8a4b38',
   };
-  const lipMat = new THREE.MeshStandardMaterial({
+  const lipMat = new THREE.MeshPhysicalMaterial({
     color: lipColorMap[role],
-    roughness: role === 'elena' ? 0.24 : 0.42,
+    roughness: role === 'elena' ? 0.22 : 0.38,
+    clearcoat: role === 'elena' ? 0.65 : 0.18,
+    clearcoatRoughness: 0.25,
   });
 
   if (role === 'elena') {
-    const upperLipGeo = new THREE.SphereGeometry(0.013, 16, 12);
+    const upperLipGeo = new THREE.SphereGeometry(0.013, 14, 10);
     upperLipGeo.scale(1.28, 0.34, 0.55);
     const upperLip = new THREE.Mesh(upperLipGeo, lipMat);
     upperLip.position.set(0, -r * 0.30, r * 0.955);
-    const lowerLipGeo = new THREE.SphereGeometry(0.012, 16, 12);
+    const lowerLipGeo = new THREE.SphereGeometry(0.012, 14, 10);
     lowerLipGeo.scale(1.18, 0.36, 0.56);
     const lowerLip = new THREE.Mesh(lowerLipGeo, lipMat);
     lowerLip.position.set(0, -r * 0.36, r * 0.945);
     headGroup.add(upperLip, lowerLip);
   } else {
-    const mouthGeo = new THREE.CapsuleGeometry(0.0042, role === 'bao' ? 0.026 : 0.024, 10, 14);
+    const mouthGeo = new THREE.CapsuleGeometry(0.0042, role === 'bao' ? 0.026 : 0.024, 8, 12);
     mouthGeo.rotateZ(Math.PI / 2);
     const mouth = new THREE.Mesh(mouthGeo, lipMat);
     mouth.position.set(0, -r * 0.34, r * 0.965);
@@ -1001,31 +2117,29 @@ export function populate3DCharacterHeadAndTorso(
     headGroup.add(mouth);
   }
 
-  // 7. Role-Specific 3D Hair (Concentric outer radius > r so zero forehead polygon clipping!), Eyewear & Garments
+  // 7. Role-Specific 3D Hair, Eyewear & Tailored Garments
   if (role === 'dealer') {
-    // Neat side-parted dark croupier hair cap + sculpted front wave
-    const hairCapGeo = new THREE.SphereGeometry(r * 1.05, 36, 28, 0, Math.PI * 2, 0, Math.PI * 0.48);
+    const hairCapGeo = new THREE.SphereGeometry(r * 1.05, 28, 22, 0, Math.PI * 2, 0, Math.PI * 0.48);
     const hairCap = new THREE.Mesh(hairCapGeo, hairMat);
     hairCap.position.set(0, 0.004, 0);
     hairCap.rotation.x = -0.22;
     headGroup.add(hairCap);
 
-    const waveGeo = new THREE.SphereGeometry(r * 0.56, 24, 16);
+    const waveGeo = new THREE.SphereGeometry(r * 0.56, 20, 14);
     waveGeo.scale(1.45, 0.42, 0.78);
     const wave = new THREE.Mesh(waveGeo, hairMat);
     wave.position.set(0.01, r * 0.80, r * 0.52);
     wave.rotation.z = -0.1;
     headGroup.add(wave);
 
-    // Groomed 3D Sideburns + Dapper Handlebar Mustache + Sculpted Chin Goatee (leaves cheeks & smile visible!)
-    const sideburnGeo = new THREE.CapsuleGeometry(0.007, 0.032, 8, 12);
+    const sideburnGeo = new THREE.CapsuleGeometry(0.007, 0.032, 6, 10);
     [-1, 1].forEach((dir) => {
       const sideburn = new THREE.Mesh(sideburnGeo, hairMat);
       sideburn.position.set(dir * (r * 0.95), 0.0, r * 0.22);
       headGroup.add(sideburn);
     });
 
-    const stacheWingGeo = new THREE.CapsuleGeometry(0.0052, 0.018, 8, 12);
+    const stacheWingGeo = new THREE.CapsuleGeometry(0.0052, 0.018, 6, 10);
     stacheWingGeo.rotateZ(Math.PI / 2);
     [-1, 1].forEach((dir) => {
       const wing = new THREE.Mesh(stacheWingGeo, hairMat);
@@ -1034,20 +2148,19 @@ export function populate3DCharacterHeadAndTorso(
       headGroup.add(wing);
     });
 
-    const goateeGeo = new THREE.SphereGeometry(r * 0.28, 20, 16);
+    const goateeGeo = new THREE.SphereGeometry(r * 0.28, 16, 14);
     goateeGeo.scale(1.05, 0.78, 0.65);
     const goatee = new THREE.Mesh(goateeGeo, hairMat);
     goatee.position.set(0, -r * 0.58, r * 0.82);
     headGroup.add(goatee);
 
-    // Flush White Dress Shirt Chest Panel + 3D Gold Bow Tie + Gold Vest Buttons
     const shirtPanelGeo = new THREE.BoxGeometry(0.095, 0.19, 0.024);
     const shirtPanel = new THREE.Mesh(shirtPanelGeo, whiteShirtMat);
     shirtPanel.position.set(0, 0.38, 0.132);
     shirtPanel.rotation.x = -0.14;
     torsoGroup.add(shirtPanel);
 
-    const knot = new THREE.Mesh(new THREE.SphereGeometry(0.013, 14, 14), goldMat);
+    const knot = new THREE.Mesh(new THREE.SphereGeometry(0.013, 12, 12), goldMat);
     knot.position.set(0, 0.45, 0.148);
     torsoGroup.add(knot);
 
@@ -1060,29 +2173,27 @@ export function populate3DCharacterHeadAndTorso(
     });
 
     [0.30, 0.24, 0.18].forEach((yPos) => {
-      const btnGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.008, 14);
+      const btnGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.008, 12);
       btnGeo.rotateX(Math.PI / 2);
       const btn = new THREE.Mesh(btnGeo, goldMat);
       btn.position.set(0, yPos, 0.152);
       torsoGroup.add(btn);
     });
   } else if (role === 'viktor') {
-    // Viktor ("The Shark"): Swept-back executive charcoal hair with smooth silver-grey temples
-    const hairCapGeo = new THREE.SphereGeometry(r * 1.05, 36, 28, 0, Math.PI * 2, 0, Math.PI * 0.48);
+    const hairCapGeo = new THREE.SphereGeometry(r * 1.05, 28, 22, 0, Math.PI * 2, 0, Math.PI * 0.48);
     const hairCap = new THREE.Mesh(hairCapGeo, hairMat);
     hairCap.position.set(0, 0.004, 0);
     hairCap.rotation.x = -0.22;
     headGroup.add(hairCap);
 
-    const pompadourGeo = new THREE.SphereGeometry(r * 0.58, 24, 16);
+    const pompadourGeo = new THREE.SphereGeometry(r * 0.58, 20, 14);
     pompadourGeo.scale(1.38, 0.44, 0.84);
     const pompadour = new THREE.Mesh(pompadourGeo, hairMat);
     pompadour.position.set(0, r * 0.82, r * 0.44);
     headGroup.add(pompadour);
 
-    // Smooth contoured silver-grey sideburns/temples hugging the cranium
     const silverMat = new THREE.MeshStandardMaterial({ color: '#94a3b8', roughness: 0.35, metalness: 0.15 });
-    const templeGeo = new THREE.SphereGeometry(r * 0.36, 16, 16);
+    const templeGeo = new THREE.SphereGeometry(r * 0.36, 14, 14);
     templeGeo.scale(0.26, 0.72, 0.85);
     [-1, 1].forEach((dir) => {
       const temple = new THREE.Mesh(templeGeo, silverMat);
@@ -1090,7 +2201,6 @@ export function populate3DCharacterHeadAndTorso(
       headGroup.add(temple);
     });
 
-    // Flush White Shirt V-Panel, Silk Navy Tie, Notched Suit Lapels & Emerald Pocket Square
     const shirtPanelGeo = new THREE.BoxGeometry(0.082, 0.19, 0.024);
     const shirtPanel = new THREE.Mesh(shirtPanelGeo, whiteShirtMat);
     shirtPanel.position.set(0, 0.35, 0.118);
@@ -1098,7 +2208,7 @@ export function populate3DCharacterHeadAndTorso(
     torsoGroup.add(shirtPanel);
 
     const tieMat = new THREE.MeshStandardMaterial({ color: '#1d4ed8', roughness: 0.28, metalness: 0.25 });
-    const tieKnot = new THREE.Mesh(new THREE.SphereGeometry(0.013, 12, 12), tieMat);
+    const tieKnot = new THREE.Mesh(new THREE.SphereGeometry(0.013, 10, 10), tieMat);
     tieKnot.position.set(0, 0.415, 0.132);
     const tieBlade = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.15, 0.012), tieMat);
     tieBlade.position.set(0, 0.33, 0.136);
@@ -1114,32 +2224,31 @@ export function populate3DCharacterHeadAndTorso(
       torsoGroup.add(lapel);
     });
 
-    const pocketMat = new THREE.MeshStandardMaterial({ color: '#10b981', roughness: 0.3 });
+    const pocketMat = new THREE.MeshStandardMaterial({ color: '#d4af37', roughness: 0.3 });
     const pocketSquare = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.016, 0.012), pocketMat);
     pocketSquare.position.set(0.076, 0.34, 0.126);
     pocketSquare.rotation.set(-0.12, 0.2, -0.1);
     torsoGroup.add(pocketSquare);
   } else if (role === 'elena') {
-    // Elena ("The Rock"): Sculpted dark hair crown, high braided updo bun with gold cuff, ruby drop earrings & necklace
-    const hairCapGeo = new THREE.SphereGeometry(r * 1.05, 36, 28, 0, Math.PI * 2, 0, Math.PI * 0.48);
+    const hairCapGeo = new THREE.SphereGeometry(r * 1.05, 28, 22, 0, Math.PI * 2, 0, Math.PI * 0.48);
     const hairCap = new THREE.Mesh(hairCapGeo, hairMat);
     hairCap.position.set(0, 0.004, 0);
     hairCap.rotation.x = -0.22;
     headGroup.add(hairCap);
 
-    const crownGeo = new THREE.SphereGeometry(r * 0.62, 24, 16);
+    const crownGeo = new THREE.SphereGeometry(r * 0.62, 20, 14);
     crownGeo.scale(1.34, 0.44, 0.82);
     const crown = new THREE.Mesh(crownGeo, hairMat);
     crown.position.set(0, r * 0.80, r * 0.38);
     headGroup.add(crown);
 
-    const bunGeo = new THREE.SphereGeometry(0.056, 20, 20);
+    const bunGeo = new THREE.SphereGeometry(0.056, 16, 16);
     bunGeo.scale(1.06, 0.88, 1.0);
     const bun = new THREE.Mesh(bunGeo, hairMat);
     bun.position.set(0, r * 1.02, -0.032);
     headGroup.add(bun);
 
-    const bunCuffGeo = new THREE.TorusGeometry(0.042, 0.0055, 12, 28);
+    const bunCuffGeo = new THREE.TorusGeometry(0.042, 0.0055, 10, 22);
     bunCuffGeo.rotateX(Math.PI / 2.2);
     const bunCuff = new THREE.Mesh(bunCuffGeo, goldMat);
     bunCuff.position.set(0, r * 0.82, -0.026);
@@ -1147,16 +2256,15 @@ export function populate3DCharacterHeadAndTorso(
 
     const rubyMat = new THREE.MeshStandardMaterial({ color: '#e11d48', roughness: 0.15, metalness: 0.35 });
     [-1, 1].forEach((dir) => {
-      const stud = new THREE.Mesh(new THREE.SphereGeometry(0.0085, 12, 12), goldMat);
+      const stud = new THREE.Mesh(new THREE.SphereGeometry(0.0085, 10, 10), goldMat);
       stud.position.set(dir * (r * 0.98), -0.02, 0.01);
-      const drop = new THREE.Mesh(new THREE.ConeGeometry(0.0085, 0.024, 12), rubyMat);
+      const drop = new THREE.Mesh(new THREE.ConeGeometry(0.0085, 0.024, 10), rubyMat);
       drop.position.set(dir * (r * 0.98), -0.038, 0.01);
       drop.rotation.x = Math.PI;
       headGroup.add(stud, drop);
     });
 
-    // Symmetrical Gold Collar Necklace + Ruby Diamond Pendant on Collarbone
-    const necklaceGeo = new THREE.TorusGeometry(0.058, 0.0045, 12, 32);
+    const necklaceGeo = new THREE.TorusGeometry(0.058, 0.0045, 10, 24);
     necklaceGeo.rotateX(Math.PI / 2 - 0.18);
     const necklace = new THREE.Mesh(necklaceGeo, goldMat);
     necklace.position.set(0, 0.445, 0.015);
@@ -1164,30 +2272,29 @@ export function populate3DCharacterHeadAndTorso(
     pendant.position.set(0, 0.425, 0.082);
     torsoGroup.add(necklace, pendant);
   } else if (role === 'bao') {
-    // Bao ("The Calling Station"): Broad heavy cheeks, rectangular eyeglasses with cyan phone reflection, short black hair
-    const cheekGeo = new THREE.SphereGeometry(0.042, 18, 16);
+    const cheekGeo = new THREE.SphereGeometry(0.042, 14, 14);
     [-1, 1].forEach((dir) => {
       const cheek = new THREE.Mesh(cheekGeo, skinMat);
       cheek.position.set(dir * 0.054, -0.022, 0.060);
       headGroup.add(cheek);
     });
 
-    const hairCapGeo = new THREE.SphereGeometry(r * 1.05, 36, 28, 0, Math.PI * 2, 0, Math.PI * 0.44);
+    const hairCapGeo = new THREE.SphereGeometry(r * 1.05, 28, 22, 0, Math.PI * 2, 0, Math.PI * 0.44);
     const hairCap = new THREE.Mesh(hairCapGeo, hairMat);
     hairCap.position.set(0, 0.006, 0);
     hairCap.rotation.x = -0.22;
     headGroup.add(hairCap);
 
-    // 3D Rectangular Designer Eyeglasses with Cyan Phone Screen Reflection
     const frameMat = new THREE.MeshStandardMaterial({ color: '#0f172a', metalness: 0.75, roughness: 0.22 });
-    const cyanLensMat = new THREE.MeshPhysicalMaterial({
-      color: '#38bdf8',
-      emissive: '#0284c7',
-      emissiveIntensity: 0.42,
-      roughness: 0.08,
-      metalness: 0.2,
+    const lensMat = new THREE.MeshPhysicalMaterial({
+      color: '#cbd5e1',
+      emissive: '#38bdf8',
+      emissiveIntensity: 0.22,
+      roughness: 0.06,
+      metalness: 0.15,
       transparent: true,
-      opacity: 0.34,
+      opacity: 0.28,
+      clearcoat: 1.0,
     });
 
     [-1, 1].forEach((dir) => {
@@ -1197,7 +2304,7 @@ export function populate3DCharacterHeadAndTorso(
       botRim.position.set(dir * 0.036, eyeY - 0.011, r * 0.97);
       const sideRim = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.024, 0.005), frameMat);
       sideRim.position.set(dir * 0.055, eyeY, r * 0.97);
-      const lensPane = new THREE.Mesh(new THREE.PlaneGeometry(0.038, 0.020), cyanLensMat);
+      const lensPane = new THREE.Mesh(new THREE.PlaneGeometry(0.038, 0.020), lensMat);
       lensPane.position.set(dir * 0.036, eyeY, r * 0.975);
       headGroup.add(topRim, botRim, sideRim, lensPane);
     });
@@ -1206,7 +2313,6 @@ export function populate3DCharacterHeadAndTorso(
     bridge.position.set(0, eyeY + 0.004, r * 0.98);
     headGroup.add(bridge);
 
-    // Flush Crew-Neck T-Shirt Panel & Bomber Jacket Metallic Zippers on Chest
     const teeMat = new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.65 });
     const teePanel = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.22, 0.024), teeMat);
     teePanel.position.set(0, 0.32, 0.165);
@@ -1221,38 +2327,37 @@ export function populate3DCharacterHeadAndTorso(
       torsoGroup.add(zip);
     });
   } else if (role === 'marcus') {
-    // Marcus ("The Maniac"): Voluminous Pompadour Hair, 3D Gold-Rimmed Aviator Sunglasses, Open Silk Shirt & Gold Chain
-    const hairCapGeo = new THREE.SphereGeometry(r * 1.05, 36, 28, 0, Math.PI * 2, 0, Math.PI * 0.48);
+    const hairCapGeo = new THREE.SphereGeometry(r * 1.05, 28, 22, 0, Math.PI * 2, 0, Math.PI * 0.48);
     const hairCap = new THREE.Mesh(hairCapGeo, hairMat);
     hairCap.position.set(0, 0.004, 0);
     hairCap.rotation.x = -0.22;
     headGroup.add(hairCap);
 
-    const quiffGeo = new THREE.SphereGeometry(r * 0.62, 24, 18);
+    const quiffGeo = new THREE.SphereGeometry(r * 0.62, 20, 14);
     quiffGeo.scale(1.36, 0.56, 0.88);
     const quiff = new THREE.Mesh(quiffGeo, hairMat);
     quiff.position.set(0, r * 0.90, r * 0.44);
     quiff.rotation.x = 0.16;
     headGroup.add(quiff);
 
-    // 3D Gold-Rimmed Tinted Aviator Sunglasses (Dark Amber-Smoke Lenses + Double Gold Bridge)
     const aviatorLensMat = new THREE.MeshPhysicalMaterial({
       color: '#451a03',
       emissive: '#78350f',
-      emissiveIntensity: 0.28,
+      emissiveIntensity: 0.22,
       metalness: 0.35,
-      roughness: 0.1,
+      roughness: 0.08,
       transparent: true,
-      opacity: 0.78,
+      opacity: 0.72,
+      clearcoat: 1.0,
     });
 
     [-1, 1].forEach((dir) => {
-      const bezelGeo = new THREE.TorusGeometry(0.021, 0.0028, 10, 24);
+      const bezelGeo = new THREE.TorusGeometry(0.021, 0.0028, 8, 20);
       bezelGeo.scale(1.18, 0.92, 1);
       const bezel = new THREE.Mesh(bezelGeo, goldMat);
       bezel.position.set(dir * 0.036, eyeY, r * 0.96);
 
-      const lensGeo = new THREE.CircleGeometry(0.020, 24);
+      const lensGeo = new THREE.CircleGeometry(0.020, 20);
       lensGeo.scale(1.18, 0.92, 1);
       const lens = new THREE.Mesh(lensGeo, aviatorLensMat);
       lens.position.set(dir * 0.036, eyeY, r * 0.962);
@@ -1265,14 +2370,13 @@ export function populate3DCharacterHeadAndTorso(
     midBar.position.set(0, eyeY + 0.004, r * 0.97);
     headGroup.add(topBar, midBar);
 
-    // Flush Open-Collar Black Silk Shirt Panel + Gold Chain + Gold-Trimmed Blazer Lapels
     const blackSilkMat = new THREE.MeshStandardMaterial({ color: '#111827', roughness: 0.25, metalness: 0.25 });
     const shirtPanel = new THREE.Mesh(new THREE.BoxGeometry(0.086, 0.19, 0.024), blackSilkMat);
     shirtPanel.position.set(0, 0.34, 0.120);
     shirtPanel.rotation.x = -0.12;
     torsoGroup.add(shirtPanel);
 
-    const goldChainGeo = new THREE.TorusGeometry(0.036, 0.0045, 10, 24, Math.PI);
+    const goldChainGeo = new THREE.TorusGeometry(0.036, 0.0045, 8, 20, Math.PI);
     goldChainGeo.rotateX(Math.PI - 0.12);
     const goldChain = new THREE.Mesh(goldChainGeo, goldMat);
     goldChain.position.set(0, 0.405, 0.134);
@@ -1286,6 +2390,7 @@ export function populate3DCharacterHeadAndTorso(
     });
   }
 }
+
 
 
 

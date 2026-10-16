@@ -579,409 +579,241 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
   }
 
   // ==========================================================================
-  // 2. IN-GAME HUD OVERLAY (Synchronized with 3D Spatial Dock)
+  // 2. IN-GAME HUD OVERLAY (Sightline-Safe Outer-Edge Architecture, <= 6 Buttons,
+  //    Monochrome Deep Obsidian + Warm Ivory + Single Champagne Gold Accent)
   // ==========================================================================
-  const now = Date.now();
-
   if (!show2DHUD) {
     return (
-      <div className="absolute top-3 right-3 z-20 flex items-center gap-2 pointer-events-auto">
-        <div className="glass-panel px-2.5 py-1.5 rounded-xl border border-amber-400/50 flex items-center gap-1.5 shadow-xl">
-          <Camera className="w-3.5 h-3.5 text-amber-300" />
-          {CAMERA_PRESETS.map((cam) => (
-            <button
-              key={cam.id}
-              onClick={() => onSelectCameraPreset(cam.id)}
-              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                cameraPreset === cam.id
-                  ? 'bg-amber-400 text-slate-950'
-                  : 'bg-slate-900/80 text-slate-300 hover:text-white'
-              }`}
-            >
-              {cam.short}
-            </button>
-          ))}
-          <button
-            onClick={onToggle2DHUD}
-            className="ml-1 px-2.5 py-1 rounded-lg bg-emerald-500/25 hover:bg-emerald-500/35 border border-emerald-400/50 text-emerald-300 text-[10px] font-black uppercase tracking-wider"
-          >
-            Show 2D HUD
-          </button>
-        </div>
+      <div className="absolute top-3 right-4 z-20 flex items-center gap-2 pointer-events-auto">
+        <button
+          onClick={onToggle2DHUD}
+          className="px-3 py-1.5 rounded-xl bg-[#090c12]/90 hover:bg-[#0f141c] border border-[#d4af37]/50 text-[#f3e5ab] text-xs font-bold tracking-wider uppercase shadow-xl"
+        >
+          HUD 표시
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-3 sm:p-4 z-10 overflow-hidden">
-      {/* 1. TOP BAR: Tournament Level, Pot + Side Pots, and Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pointer-events-auto">
-        <div className="glass-panel px-3.5 py-2 rounded-xl flex items-center gap-3">
-          <span className="text-xl">♠️</span>
-          <div>
-            <div className="font-extrabold text-xs sm:text-sm gold-gradient-text tracking-wide flex items-center gap-2">
-              <span>VIP SIT & GO • LVL {table.blindLevel}</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono">
-                {alivePlayersCount}/5 Left
-              </span>
-              <span
-                className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                  musicMood === 'high_stakes'
-                    ? 'bg-rose-500/25 text-rose-300 border border-rose-400/40 animate-pulse'
-                    : 'bg-emerald-500/15 text-emerald-300 border border-emerald-400/30'
-                }`}
-              >
-                {musicMood === 'high_stakes' ? '🔥 High-Stakes Pulse' : '🎷 Lounge Jazz'}
-              </span>
-            </div>
-            <div className="text-[11px] text-slate-300 font-mono">
-              Blinds: <strong className="text-amber-300">${table.smallBlind}/${table.bigBlind}</strong> • Hand #{table.handCount} • Next lvl in {handsUntilBlindUp}h
-            </div>
-          </div>
-        </div>
-
-        {/* Center Main Pot + Side Pots Display */}
-        <div className="glass-panel px-6 py-1.5 rounded-2xl flex flex-col items-center border-amber-400/40">
+    <div
+      data-ux-layer="main-hud"
+      className="absolute inset-0 pointer-events-none flex flex-col justify-between p-3 sm:p-4 z-10 overflow-hidden"
+    >
+      {/* 1. OUTER TOP EDGE BAR: Ultra-Compact Left Status Strip + Single Right Menu Button */}
+      <div className="flex items-start justify-between gap-3 pointer-events-auto">
+        {/* Top-Left Single-Line Status & Pot Strip (Never hangs into center Dealer sightline) */}
+        <div
+          data-ux-panel="top-left-status"
+          className="bg-[#090c12]/92 backdrop-blur-md px-3.5 py-2 rounded-xl border border-[#d4af37]/40 flex flex-wrap items-center gap-3 shadow-2xl"
+        >
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold tracking-widest text-amber-200/80 uppercase">
-              {table.isAllInRunout ? '🔥 ALL-IN RUNOUT' : `TOTAL POT • ${table.phase.toUpperCase()}`}
+            <span className="text-[#d4af37] text-sm font-black">♠</span>
+            <span className="text-xs font-extrabold tracking-wider text-[#f8fafc] uppercase">
+              VIP LVL {table.blindLevel}
+            </span>
+            <span className="text-[11px] font-mono text-[#94a3b8]">
+              #{table.handCount} · ${table.smallBlind}/${table.bigBlind} · {alivePlayersCount}/5명
             </span>
           </div>
-          <span className="text-2xl sm:text-3xl font-extrabold text-amber-300 font-mono tracking-tight">
-            ${table.pot + table.stagedBet}
-          </span>
-          {table.sidePots.length > 1 && (
-            <div className="flex flex-wrap gap-1.5 mt-0.5">
-              {table.sidePots.map((sp, i) => (
-                <span
-                  key={i}
-                  className="text-[10px] px-1.5 py-0.5 rounded bg-slate-900/90 border border-amber-400/30 text-amber-200 font-mono"
-                >
-                  {sp.label}: ${sp.amount}
-                </span>
-              ))}
-            </div>
-          )}
+
+          <div className="h-3.5 w-[1px] bg-slate-800 hidden sm:block" />
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-[#94a3b8]">
+              {table.isAllInRunout ? 'ALL-IN RUNOUT' : table.phase.toUpperCase()} POT
+            </span>
+            <span className="text-sm sm:text-base font-black font-mono text-[#f3e5ab]">
+              ${table.pot + table.stagedBet}
+            </span>
+            {table.sidePots.length > 1 && (
+              <span className="text-[10px] font-mono text-[#94a3b8]">
+                ({table.sidePots.map((sp) => `${sp.label} $${sp.amount}`).join(' · ')})
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* Right Quick Controls */}
-        <div className="flex items-center gap-1.5">
+        {/* Top-Right Single Unified Menu / Settings Trigger (Button #1) */}
+        <div data-ux-panel="top-right-menu" className="flex items-center">
           <button
+            data-testid="hud-menu-trigger"
             onClick={() => {
               const next = !showDogfoodDrawer;
               setShowDogfoodDrawer(next);
               if (next) onRunSpatialAudit();
             }}
-            className={`glass-panel px-2.5 py-2 rounded-xl flex items-center gap-1.5 font-bold text-xs transition-all border ${
-              showDogfoodDrawer
-                ? 'border-amber-400 text-amber-200 bg-amber-500/25 shadow-lg'
-                : 'border-amber-400/40 text-amber-300 hover:bg-amber-500/15'
-            }`}
-            title="Open 3D Visual & Dogfood Inspector (Cameras, Scenarios, Auto-Pilot Bot, Spatial Audit)"
+            className="bg-[#090c12]/92 hover:bg-[#0f141c] backdrop-blur-md px-3.5 py-2 rounded-xl border border-[#d4af37]/50 text-[#f3e5ab] text-xs font-extrabold tracking-wider flex items-center gap-2 shadow-2xl transition-all active:scale-95"
+            title="메뉴, GTO 13×13 매트릭스, 카메라 시점, 사운드 및 3D 공간 검증 열기"
           >
-            <Camera className="w-4 h-4 text-amber-300" />
-            <span>3D Inspector</span>
-            {isAutoPilot && (
-              <span className="px-1.5 py-0.2 rounded bg-emerald-500 text-slate-950 text-[9px] font-black">
-                BOT {speedMultiplier}x
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setShowBanterFeed((prev) => !prev)}
-            className={`glass-panel p-2.5 rounded-xl transition-colors ${
-              showBanterFeed
-                ? 'border-amber-400/50 text-amber-300 bg-amber-500/15'
-                : 'text-slate-300 hover:border-amber-400/50'
-            }`}
-            title="Toggle Live Table-Talk & Croupier Feed"
-          >
-            <MessageSquare className="w-4 h-4" />
-          </button>
-
-          <button
-            onClick={toggleMusic}
-            className={`glass-panel p-2.5 rounded-xl transition-colors ${
-              musicEnabled && !isMuted
-                ? 'text-emerald-400 hover:border-amber-400/50'
-                : 'text-slate-500 hover:border-amber-400/50'
-            }`}
-            title="Toggle Lounge Jazz / High-Stakes Soundtrack"
-          >
-            <Music className="w-4 h-4" />
-          </button>
-
-          <button
-            onClick={toggleVoice}
-            className={`glass-panel p-2.5 rounded-xl transition-colors ${
-              voiceEnabled && !isMuted
-                ? 'text-amber-300 hover:border-amber-400/50'
-                : 'text-slate-500 hover:border-amber-400/50'
-            }`}
-            title="Toggle Gemini 3.8 TTS & Croupier Voice"
-          >
-            <Mic className="w-4 h-4" />
-          </button>
-
-          <button
-            onClick={() => setShowGTODrawer((prev) => !prev)}
-            className={`glass-panel px-2.5 py-2 rounded-xl flex items-center gap-1.5 font-bold text-xs transition-all border ${
-              showGTODrawer
-                ? 'border-cyan-400 text-cyan-200 bg-cyan-500/25 shadow-lg'
-                : 'border-cyan-400/40 text-cyan-300 hover:bg-cyan-500/15'
-            }`}
-            title="Open GTO Solver, 13x13 Hand Range Matrix & EV Decision Grader"
-          >
-            <Brain className="w-4 h-4 text-cyan-400" />
-            <span>GTO {stats.gtoAccuracyScore}%</span>
-          </button>
-
-          <button
-            onClick={() => setShowStatsDrawer((prev) => !prev)}
-            className={`glass-panel p-2.5 rounded-xl transition-colors ${
-              showStatsDrawer
-                ? 'border-amber-400 text-amber-300 bg-amber-500/20'
-                : 'text-slate-200 hover:border-amber-400/50'
-            }`}
-            title="Tournament Telemetry & Gemini API Key Settings"
-          >
-            <BarChart3 className="w-4 h-4" />
-          </button>
-
-          <button
-            onClick={toggleSound}
-            className="glass-panel p-2.5 rounded-xl hover:border-amber-400/50 transition-colors text-slate-200"
-            title="Mute / Unmute All Audio"
-          >
-            {isMuted ? (
-              <VolumeX className="w-4 h-4 text-red-400" />
-            ) : (
-              <Volume2 className="w-4 h-4 text-emerald-400" />
-            )}
-          </button>
-
-          <button
-            onClick={onResetView}
-            className="glass-panel p-2.5 rounded-xl hover:border-amber-400/50 transition-colors text-slate-200"
-            title="Reset Camera to Seat #0"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
-
-          <button
-            onClick={() => setShowVisionProModal(true)}
-            className="glass-panel px-2.5 py-2 rounded-xl flex items-center gap-1.5 font-bold text-xs text-emerald-300 border-emerald-400/40 hover:bg-emerald-500/20 transition-all"
-            title="Apple Vision Pro (visionOS) Test & Blender .USDZ AR QuickLook"
-          >
-            <Box className="w-4 h-4 text-emerald-400" />
-            <span className="hidden md:inline">Vision Pro / .USDZ</span>
-          </button>
-
-          <button
-            onClick={onEnterVR}
-            className={`glass-panel px-3 py-2 rounded-xl flex items-center gap-1.5 font-bold text-xs tracking-wide transition-all ${
-              isXRSupported
-                ? 'bg-amber-500/20 text-amber-300 border-amber-400/50 hover:bg-amber-500/30'
-                : 'text-slate-300 border-slate-700 hover:border-amber-400/40'
-            }`}
-          >
-            <Glasses className="w-4 h-4 text-amber-300" />
-            <span className="hidden sm:inline">
-              {isInXR ? 'Exit XR' : isXRSupported ? 'Enter WebXR' : 'WebXR'}
+            <Layers className="w-3.5 h-3.5 text-[#d4af37]" />
+            <span>메뉴 / 설정</span>
+            <span className="px-1.5 py-0.5 rounded bg-[#d4af37]/20 border border-[#d4af37]/40 text-[#f3e5ab] font-mono text-[10px]">
+              GTO {stats.gtoAccuracyScore}%
             </span>
           </button>
-
-          {isInXR && onAdjustXROffset && (
-            <div className="flex items-center gap-1 glass-panel px-2 py-1 rounded-xl border border-amber-500/40 bg-amber-950/40 text-xs">
-              <span className="text-amber-300 font-bold hidden sm:inline mr-1">시점 위치:</span>
-              <button
-                onClick={() => onAdjustXROffset(0, 0, 0.08)}
-                className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-amber-200 rounded font-bold transition-all text-xs border border-amber-400/30"
-                title="딜러로부터 더 멀어지기 (+Z)"
-              >
-                멀리 (뒤로)
-              </button>
-              <button
-                onClick={() => onAdjustXROffset(0, 0, -0.08)}
-                className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded font-bold transition-all text-xs border border-slate-600"
-                title="테이블 쪽으로 가까워지기 (-Z)"
-              >
-                가까이
-              </button>
-              <button
-                onClick={() => onAdjustXROffset(0, 0.05, 0)}
-                className="px-1.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 rounded font-bold transition-all text-xs border border-emerald-400/30"
-                title="시점 높이기 (+Y)"
-              >
-                ▲
-              </button>
-              <button
-                onClick={() => onAdjustXROffset(0, -0.05, 0)}
-                className="px-1.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 rounded font-bold transition-all text-xs border border-emerald-400/30"
-                title="시점 낮추기 (-Y)"
-              >
-                ▼
-              </button>
-            </div>
-          )}
         </div>
       </div>
 
-      {/* 2. AI RIVAL STATUS BAR WITH NANO BANANA PORTRAITS, VILLAIN HUD (VPIP/PFR/AF), PHYSICAL TELLS & SPEECH BUBBLES */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full max-w-5xl mx-auto pointer-events-auto">
-        {players
-          .filter((p) => !p.isHuman)
-          .map((p) => {
-            const tellBadge = getTellBadge(p);
-            const seatPos = getSeatPosition(p.seatIndex, table.dealerSeat, players);
-            const hasLiveSpeech =
-              p.activeChatBubble && p.activeChatTimestamp && now - p.activeChatTimestamp < 6500;
-
-            return (
-              <div
-                key={p.id}
-                className={`relative glass-panel px-2.5 py-2 rounded-xl transition-all border ${
-                  p.eliminated
-                    ? 'opacity-35 border-slate-800 bg-slate-950/40'
-                    : p.isTurn
-                    ? 'border-amber-400 ring-2 ring-amber-400/30 bg-amber-950/40'
-                    : p.folded
-                    ? 'opacity-50 border-slate-800'
-                    : 'border-slate-800/90'
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  {p.avatarUrl && (
-                    <img
-                      src={p.avatarUrl}
-                      alt={p.name}
-                      className="w-8 h-8 rounded-full object-cover border shrink-0"
-                      style={{ borderColor: p.color }}
-                    />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span
-                        className="font-bold truncate flex items-center gap-1"
-                        style={{ color: p.color }}
-                      >
-                        {p.name.split(' ')[0]}
-                        {!p.eliminated && (
-                          <span
-                            className="px-1 py-0.2 rounded bg-slate-900 border border-slate-700 text-[9px] font-mono text-slate-300"
-                            title={seatPos.description}
-                          >
-                            {seatPos.position}
-                          </span>
-                        )}
-                        {table.dealerSeat === p.seatIndex && !p.eliminated && (
-                          <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-400 text-slate-950 text-[9px] font-black">
-                            D
-                          </span>
-                        )}
-                      </span>
-                      <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-900 font-mono text-amber-300 font-bold">
-                        {p.eliminated ? `OUT #${p.finishPlace}` : `$${p.chips}`}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[10px] text-slate-300 mt-0.5">
-                      <span className="truncate">
-                        {p.eliminated
-                          ? 'Eliminated'
-                          : p.folded
-                          ? 'Folded'
-                          : p.allIn
-                          ? '🔥 ALL-IN'
-                          : p.lastAction || 'Ready'}
-                      </span>
-                      {p.currentBet > 0 && !p.eliminated && (
-                        <span className="font-mono text-emerald-400 font-bold">
-                          ${p.currentBet}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Pro Villain HUD Strip (VPIP / PFR / AF) + Live Physical Tell Pill */}
-                <div className="flex flex-wrap items-center justify-between gap-1 mt-1">
-                  {p.hudStats && !p.eliminated && (
-                    <div
-                      className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-950/90 border border-slate-800 text-slate-300 flex items-center gap-1"
-                      title={`Villain HUD Telemetry — VPIP: ${p.hudStats.vpipPct}% (Voluntarily Put $ In Pot) • PFR: ${p.hudStats.pfrPct}% (Preflop Raise) • AF: ${p.hudStats.aggressionFactor.toFixed(1)} (Postflop Aggression Factor)`}
-                    >
-                      <span>
-                        VPIP <strong className="text-cyan-300">{p.hudStats.vpipPct}%</strong>
-                      </span>
-                      <span className="text-slate-600">•</span>
-                      <span>
-                        PFR <strong className="text-amber-300">{p.hudStats.pfrPct}%</strong>
-                      </span>
-                      <span className="text-slate-600">•</span>
-                      <span>
-                        AF{' '}
-                        <strong className="text-rose-300">
-                          {p.hudStats.aggressionFactor.toFixed(1)}
-                        </strong>
-                      </span>
-                    </div>
-                  )}
-
-                  {tellBadge && (
-                    <div
-                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded border inline-flex items-center gap-1 ${tellBadge.className}`}
-                      title={tellBadge.title}
-                    >
-                      <span>{tellBadge.label}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Floating Speech Bubble when AI talks */}
-                {hasLiveSpeech && (
-                  <div className="mt-1 px-2 py-1 rounded-lg bg-slate-950/95 border border-amber-400/50 text-[10px] text-amber-100 italic leading-snug shadow-lg">
-                    "{p.activeChatBubble}"
-                  </div>
-                )}
-              </div>
-            );
-          })}
-      </div>
-
-      {/* 2B. 3D VISUAL & DOGFOOD INSPECTOR DRAWER */}
+      {/* 2. UNIFIED SLIDE-OVER MENU / SETTINGS / INSPECTOR DRAWER (Only visible when toggled open) */}
       {showDogfoodDrawer && (
-        <div className="self-end glass-panel p-4 rounded-2xl w-96 max-h-[76vh] overflow-y-auto pointer-events-auto border-amber-400/50 shadow-2xl space-y-3">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-            <div className="flex items-center gap-1.5">
-              <Camera className="w-4 h-4 text-amber-300" />
-              <span className="text-xs font-extrabold uppercase tracking-wider text-amber-300">
-                3D Visual & Dogfood Inspector
+        <div
+          data-ux-drawer="unified-settings-drawer"
+          className="self-end bg-[#090c12]/96 backdrop-blur-xl p-4 rounded-2xl w-96 max-h-[76vh] overflow-y-auto pointer-events-auto border border-[#d4af37]/50 shadow-2xl space-y-3 text-[#f8fafc]"
+        >
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <div className="flex items-center gap-2">
+              <Layers className="w-4 h-4 text-[#d4af37]" />
+              <span className="font-extrabold text-sm text-[#f3e5ab]">
+                통합 메뉴 · 코칭 · 3D 시점 설정
               </span>
             </div>
             <button
               onClick={() => setShowDogfoodDrawer(false)}
-              className="text-xs text-slate-400 hover:text-white font-bold"
+              className="text-xs text-[#94a3b8] hover:text-[#f8fafc] px-2 py-0.5 rounded bg-[#0f141c] border border-slate-800"
             >
-              Close
+              닫기 ✕
             </button>
           </div>
 
-          {/* Multi-Angle 3D Camera Presets */}
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-              Multi-Angle 3D Camera Presets
+          {/* Quick Tools: GTO Matrix, Stats, Audio, XR, Vision Pro */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              onClick={() => {
+                setShowDogfoodDrawer(false);
+                setShowGTODrawer(true);
+              }}
+              className="px-3 py-2 rounded-xl bg-[#0f141c] hover:bg-slate-900 border border-[#d4af37]/40 text-xs font-bold text-[#f3e5ab] flex items-center gap-2"
+            >
+              <Brain className="w-3.5 h-3.5 text-[#d4af37]" />
+              <span>13×13 GTO 솔버</span>
+            </button>
+
+            <button
+              onClick={() => {
+                const nextMode = solverMode === 'exploit' ? 'pure_gto' : 'exploit';
+                onChangeSolverMode(nextMode);
+              }}
+              className="px-3 py-2 rounded-xl bg-[#0f141c] hover:bg-slate-900 border border-slate-800 text-xs font-bold text-[#f8fafc] flex items-center justify-between"
+            >
+              <span>솔버 모드</span>
+              <span className="text-[#d4af37] font-mono uppercase">
+                {solverMode === 'exploit' ? 'Exploit' : 'Nash'}
+              </span>
+            </button>
+
+            <button
+              onClick={toggleSound}
+              className="px-3 py-2 rounded-xl bg-[#0f141c] hover:bg-slate-900 border border-slate-800 text-xs font-bold text-[#f8fafc] flex items-center gap-2"
+            >
+              {isMuted ? (
+                <VolumeX className="w-3.5 h-3.5 text-[#94a3b8]" />
+              ) : (
+                <Volume2 className="w-3.5 h-3.5 text-[#d4af37]" />
+              )}
+              <span>{isMuted ? '오디오 음소거됨' : '오디오 켜짐'}</span>
+            </button>
+
+            <button
+              onClick={toggleMusic}
+              className="px-3 py-2 rounded-xl bg-[#0f141c] hover:bg-slate-900 border border-slate-800 text-xs font-bold text-[#f8fafc] flex items-center gap-2"
+            >
+              <Music className="w-3.5 h-3.5 text-[#d4af37]" />
+              <span>{musicEnabled ? '재즈 BGM 켜짐' : '재즈 BGM 꺼짐'}</span>
+            </button>
+
+            <button
+              onClick={toggleVoice}
+              className="px-3 py-2 rounded-xl bg-[#0f141c] hover:bg-slate-900 border border-slate-800 text-xs font-bold text-[#f8fafc] flex items-center gap-2"
+            >
+              <Mic className="w-3.5 h-3.5 text-[#d4af37]" />
+              <span>{voiceEnabled ? '딜러 음성 켜짐' : '딜러 음성 꺼짐'}</span>
+            </button>
+
+            <button
+              onClick={onResetView}
+              className="px-3 py-2 rounded-xl bg-[#0f141c] hover:bg-slate-900 border border-slate-800 text-xs font-bold text-[#f8fafc] flex items-center gap-2"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-[#d4af37]" />
+              <span>기본 시점 초기화</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setShowDogfoodDrawer(false);
+                setShowVisionProModal(true);
+              }}
+              className="px-3 py-2 rounded-xl bg-[#0f141c] hover:bg-slate-900 border border-slate-800 text-xs font-bold text-[#f8fafc] flex items-center gap-2"
+            >
+              <Box className="w-3.5 h-3.5 text-[#d4af37]" />
+              <span>Vision Pro / USDZ</span>
+            </button>
+
+            <button
+              onClick={onEnterVR}
+              className="px-3 py-2 rounded-xl bg-[#0f141c] hover:bg-slate-900 border border-slate-800 text-xs font-bold text-[#f8fafc] flex items-center gap-2"
+            >
+              <Glasses className="w-3.5 h-3.5 text-[#d4af37]" />
+              <span>{isInXR ? 'WebXR 종료' : 'WebXR 진입'}</span>
+            </button>
+          </div>
+
+          {/* Physical Chip Ring Toss & Quick Table-Talk Emotes (Consolidated in Drawer) */}
+          <div className="bg-[#0f141c] p-2.5 rounded-xl border border-slate-800 space-y-2">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[#94a3b8]">
+              테이블 대화 (Table Talk) & 수동 칩 토스
             </div>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="flex flex-wrap gap-1">
+              {QUICK_EMOTES.map((emote) => (
+                <button
+                  key={emote.id}
+                  onClick={() => onSendQuickEmote(emote.id)}
+                  className="px-2 py-1 rounded-lg bg-[#090c12] hover:bg-slate-900 border border-slate-800 text-[10px] font-semibold text-[#f8fafc] flex items-center gap-1"
+                >
+                  <span>{emote.icon}</span>
+                  <span>{emote.label}</span>
+                </button>
+              ))}
+            </div>
+            {humanPlayer.isTurn && !humanPlayer.folded && table.phase !== 'showdown' && (
+              <div className="flex items-center gap-1.5 pt-1 border-t border-slate-800/80">
+                <span className="text-[10px] text-[#94a3b8] font-bold">베팅 링 칩 투척:</span>
+                {([1, 5, 25, 100] as ChipDenomination[]).map((denom) => (
+                  <button
+                    key={denom}
+                    disabled={humanPlayer.chips - table.stagedBet < denom}
+                    onClick={() => onStageChip(denom)}
+                    className="px-2 py-1 rounded-lg bg-[#090c12] border border-[#d4af37]/40 text-[#f3e5ab] font-mono text-[10px] font-bold disabled:opacity-30"
+                  >
+                    +${denom}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 1. Multi-Angle Camera Rig Presets */}
+          <div className="bg-[#0f141c] p-2.5 rounded-xl border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#94a3b8]">
+                카메라 프리셋 (6개 앵글)
+              </span>
+              <button
+                onClick={onToggle2DHUD}
+                className="px-2 py-0.5 rounded bg-[#d4af37]/15 border border-[#d4af37]/40 text-[#f3e5ab] text-[10px] font-bold"
+              >
+                클린 3D 뷰 (HUD 숨김)
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
               {CAMERA_PRESETS.map((cam) => (
                 <button
                   key={cam.id}
                   onClick={() => onSelectCameraPreset(cam.id)}
-                  className={`px-2 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${
+                  className={`px-2.5 py-1.5 rounded-lg text-left text-[11px] font-bold transition-all border ${
                     cameraPreset === cam.id
-                      ? 'bg-amber-500/25 border-amber-400 text-amber-200'
-                      : 'bg-slate-900/80 border-slate-800 text-slate-300 hover:border-amber-400/40'
+                      ? 'bg-[#d4af37] text-[#090c12] border-[#f3e5ab] font-black'
+                      : 'bg-[#090c12] text-[#f8fafc] border-slate-800 hover:border-[#d4af37]/50'
                   }`}
                 >
                   {cam.label}
@@ -990,57 +822,54 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
             </div>
           </div>
 
-          {/* Deterministic 3D Visual Scenarios */}
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-              Deterministic 3D Visual Scenarios
+          {/* 2. Deterministic Scenario Loader */}
+          <div className="bg-[#0f141c] p-2.5 rounded-xl border border-slate-800 space-y-1.5">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[#94a3b8]">
+              시나리오 즉시 로드 (Deterministic State)
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="space-y-1 max-h-44 overflow-y-auto pr-1">
               {DOGFOOD_SCENARIOS.map((sc) => (
                 <button
                   key={sc.id}
                   onClick={() => onLoadScenario(sc.id)}
-                  className={`p-2 rounded-xl text-left border transition-all ${
+                  className={`w-full px-2.5 py-1.5 rounded-lg text-left transition-all border flex items-center justify-between ${
                     activeScenario === sc.id
-                      ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
-                      : 'bg-slate-900/80 border-slate-800 text-slate-200 hover:border-cyan-400/40'
+                      ? 'bg-[#d4af37]/20 border-[#d4af37] text-[#f3e5ab]'
+                      : 'bg-[#090c12] border-slate-800 text-[#f8fafc] hover:border-[#d4af37]/40'
                   }`}
                 >
-                  <div className="text-[11px] font-bold truncate">{sc.label}</div>
-                  <div className="text-[9px] text-slate-400 truncate">{sc.desc}</div>
+                  <div>
+                    <div className="text-[11px] font-extrabold">{sc.label}</div>
+                    <div className="text-[9px] text-[#94a3b8]">{sc.desc}</div>
+                  </div>
+                  <span className="text-[10px] font-mono text-[#d4af37] font-bold">로드 →</span>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Auto-Pilot Bot & Speed Multiplier */}
-          <div className="bg-slate-900/85 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Bot className={`w-4 h-4 ${isAutoPilot ? 'text-emerald-400' : 'text-slate-400'}`} />
-              <div>
-                <div className="text-[11px] font-bold text-white">Seat #0 Auto-Pilot Bot</div>
-                <div className="text-[9px] text-slate-400">Continuous hands with GTO actions</div>
-              </div>
-            </div>
+          {/* 3. Seat #0 Auto-Pilot Bot + Speed Multiplier */}
+          <div className="bg-[#0f141c] p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2">
+            <button
+              onClick={onToggleAutoPilot}
+              className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 transition-all ${
+                isAutoPilot
+                  ? 'bg-[#d4af37] text-[#090c12]'
+                  : 'bg-[#090c12] text-[#f8fafc] border border-slate-700'
+              }`}
+            >
+              <Bot className="w-3.5 h-3.5" />
+              <span>{isAutoPilot ? 'Auto-Pilot 켜짐' : 'Auto-Pilot 봇'}</span>
+            </button>
             <div className="flex items-center gap-1">
-              <button
-                onClick={onToggleAutoPilot}
-                className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border ${
-                  isAutoPilot
-                    ? 'bg-emerald-500 text-slate-950 border-emerald-300'
-                    : 'bg-slate-800 text-slate-300 border-slate-700'
-                }`}
-              >
-                {isAutoPilot ? 'ON' : 'OFF'}
-              </button>
               {([1, 2, 5] as const).map((spd) => (
                 <button
                   key={spd}
                   onClick={() => onChangeSpeedMultiplier(spd)}
-                  className={`px-1.5 py-1 rounded-lg text-[10px] font-mono font-bold border ${
+                  className={`px-2 py-1 rounded text-[10px] font-mono font-bold ${
                     speedMultiplier === spd
-                      ? 'bg-amber-500/25 border-amber-400 text-amber-300'
-                      : 'bg-slate-950 border-slate-800 text-slate-400'
+                      ? 'bg-[#d4af37] text-[#090c12]'
+                      : 'bg-[#090c12] text-[#94a3b8]'
                   }`}
                 >
                   {spd}x
@@ -1049,286 +878,47 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
             </div>
           </div>
 
-          {/* 3D Canvas Overlay & Wireframe Controls */}
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              onClick={onToggle2DHUD}
-              className="py-1.5 px-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[11px] font-bold text-slate-200 flex items-center justify-center gap-1.5"
-            >
-              <Eye className="w-3.5 h-3.5 text-amber-300" />
-              <span>Pure 3D Canvas</span>
-            </button>
-            <button
-              onClick={onToggleDebugOverlay}
-              className={`py-1.5 px-2.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 ${
-                debugOverlayEnabled
-                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
-                  : 'bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>{debugOverlayEnabled ? 'Colliders ON' : '3D Colliders'}</span>
-            </button>
-          </div>
-
-          {/* Programmatic 3D Spatial Audit Report */}
-          <div className="bg-slate-950/90 p-2.5 rounded-xl border border-slate-800 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
-                Programmatic 3D Spatial Audit
-              </span>
-              <button
-                onClick={onRunSpatialAudit}
-                className="text-[10px] font-bold text-cyan-300 hover:underline"
-              >
-                Re-Run Checks
-              </button>
+          {/* 4. Gemini API Key & Tournament Restart */}
+          <div className="bg-[#0f141c] p-2.5 rounded-xl border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between text-[10px] text-[#94a3b8] font-bold">
+              <span>GEMINI API KEY ({hasGeminiKey ? '연결됨' : '미설정'})</span>
+              <span>Draws: {drawCalls}</span>
             </div>
-            {spatialAudit ? (
-              <div className="space-y-1">
-                {spatialAudit.checks.map((chk) => (
-                  <div
-                    key={chk.id}
-                    className="flex items-center justify-between text-[10px] bg-slate-900/90 px-2 py-1 rounded border border-slate-800/80"
-                  >
-                    <span className="text-slate-200 truncate pr-2" title={chk.metric}>
-                      {chk.passed ? '✓' : '✗'} {chk.label}
-                    </span>
-                    <span
-                      className={`font-mono font-bold shrink-0 ${
-                        chk.passed ? 'text-emerald-400' : 'text-rose-400'
-                      }`}
-                    >
-                      {chk.passed ? 'PASS' : 'FAIL'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-[10px] text-slate-400">Click Re-Run Checks to inspect 3D bounds.</div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 3. STATS, AUDIO & GEMINI API KEY DRAWER MODAL */}
-      {showStatsDrawer && (
-        <div className="self-end glass-panel p-4 rounded-2xl w-80 pointer-events-auto border-amber-400/40 shadow-2xl">
-          <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
-            <span className="text-xs font-extrabold uppercase tracking-wider text-amber-300">
-              VIP Telemetry & AI Media Settings
-            </span>
-            <button
-              onClick={() => setShowStatsDrawer(false)}
-              className="text-xs text-slate-400 hover:text-white"
-            >
-              Close
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
-            <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
-              <div className="text-[10px] text-slate-400 uppercase">Hands Played</div>
-              <div className="text-sm font-mono font-bold text-white">{stats.handsPlayed}</div>
-            </div>
-            <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
-              <div className="text-[10px] text-slate-400 uppercase">Win Rate</div>
-              <div className="text-sm font-mono font-bold text-emerald-400">
-                {stats.handsPlayed > 0
-                  ? `${Math.round((stats.handsWon / stats.handsPlayed) * 100)}%`
-                  : '0%'}
-              </div>
-            </div>
-            <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
-              <div className="text-[10px] text-slate-400 uppercase">GTO Accuracy</div>
-              <div className="text-sm font-mono font-bold text-cyan-300">
-                {stats.gtoAccuracyScore}% ({stats.gtoOptimalCount}/{stats.gtoDecisionsTotal})
-              </div>
-            </div>
-            <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
-              <div className="text-[10px] text-slate-400 uppercase">EV Loss / Draw Calls</div>
-              <div className="text-sm font-mono font-bold text-amber-300">
-                -{stats.gtoCumulativeEvLossBB.toFixed(1)} BB • {drawCalls}dc
-              </div>
-            </div>
-          </div>
-
-          {/* Audio Volume Slider */}
-          <div className="mb-3 bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
-            <div className="flex justify-between text-[11px] text-slate-300 mb-1">
-              <span>Master Lounge Volume</span>
-              <span className="font-mono">{Math.round(volume * 100)}%</span>
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={isMuted ? 0 : volume}
-              onChange={handleVolumeChange}
-              className="w-full accent-amber-400 cursor-pointer"
-            />
-          </div>
-
-          {/* Gemini 3.8 Flash TTS & Lyria 3 API Key Config */}
-          <div className="mb-3 bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
-            <div className="flex items-center justify-between text-[11px] font-bold text-amber-300 mb-1">
-              <span className="flex items-center gap-1">
-                <KeyRound className="w-3.5 h-3.5" />
-                <span>Gemini TTS & Lyria 3 Key</span>
-              </span>
-              <span
-                className={`text-[10px] px-1.5 py-0.5 rounded ${
-                  hasGeminiKey
-                    ? 'bg-emerald-500/20 text-emerald-300'
-                    : 'bg-slate-800 text-slate-400'
-                }`}
-              >
-                {hasGeminiKey ? 'Live API Active' : 'WebSpeech + Synth Fallback'}
-              </span>
-            </div>
-            <div className="flex gap-1.5 mt-1.5">
+            <div className="flex gap-1.5">
               <input
                 type="password"
-                placeholder="Paste Gemini API Key..."
                 value={apiKeyInput}
                 onChange={(e) => setApiKeyInput(e.target.value)}
-                className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-amber-400"
+                placeholder="AIzaSy..."
+                className="flex-1 bg-[#090c12] border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-[#f8fafc] font-mono focus:outline-none focus:border-[#d4af37]"
               />
               <button
                 onClick={handleSaveApiKey}
-                className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs"
+                className="px-2.5 py-1 rounded-lg bg-[#d4af37] text-[#090c12] font-bold text-xs"
               >
-                Save
+                저장
               </button>
             </div>
+            <button
+              onClick={() => {
+                setShowDogfoodDrawer(false);
+                onStartNewTournament();
+              }}
+              className="w-full py-1.5 px-3 rounded-xl bg-[#090c12] hover:bg-slate-900 border border-[#d4af37]/40 text-[#f3e5ab] text-xs font-bold flex items-center justify-center gap-1.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>토너먼트 새 게임 시작 ($200 스택)</span>
+            </button>
           </div>
-
-          <button
-            onClick={() => {
-              setShowStatsDrawer(false);
-              onStartNewTournament();
-            }}
-            className="w-full py-2 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Restart 5-Max Sit & Go ($200)</span>
-          </button>
         </div>
       )}
 
-      {/* 4. SHOWDOWN / TOURNAMENT CHAMPION BANNER + STREET-BY-STREET GTO AUDIT */}
-      {table.phase === 'showdown' && table.winners.length > 0 && (
-        <div className="self-center glass-panel p-5 rounded-2xl max-w-lg w-full text-center pointer-events-auto border-amber-400/60 shadow-2xl">
-          <Trophy className="w-8 h-8 text-amber-400 mx-auto mb-1 animate-pulse" />
-          {isTournamentOver ? (
-            <>
-              <div className="text-[11px] font-bold uppercase tracking-widest text-amber-300 mb-1">
-                Sit & Go Championship Complete
-              </div>
-              <h2 className="text-2xl font-black gold-gradient-text mb-1">
-                {table.tournamentWinnerId === humanPlayer.id
-                  ? '🏆 YOU WON THE $1,000 VIP TOURNAMENT!'
-                  : `Eliminated in #${humanPlayer.finishPlace || alivePlayersCount} Place`}
-              </h2>
-              <p className="text-xs text-slate-300 mb-3">
-                {table.winners.map((w) => `${w.playerName} (+$${w.amount})`).join(' • ')} —{' '}
-                {table.winners[0].handName}
-              </p>
-            </>
-          ) : (
-            <>
-              <h2 className="text-xl font-black gold-gradient-text">
-                {table.winners.map((w) => w.playerName).join(' & ')} Wins!
-              </h2>
-              <div className="text-xs text-amber-200/90 font-medium my-1">
-                {table.winners
-                  .map(
-                    (w) => `${w.potLabel ? `[${w.potLabel}] ` : ''}${w.handName} (+$${w.amount})`
-                  )
-                  .join(' • ')}
-              </div>
-              <div className="text-2xl font-extrabold text-emerald-400 font-mono mb-2">
-                +${table.winners.reduce((acc, w) => acc + w.amount, 0)}
-              </div>
-            </>
-          )}
-
-          {/* Street-by-Street Hand GTO Audit Strip */}
-          {decisionHistory.some((d) => d.handNumber === table.handCount) && (
-            <div className="bg-slate-950/90 border border-cyan-500/30 rounded-xl p-2.5 mb-3 text-left">
-              <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-cyan-300 mb-1.5">
-                <span className="flex items-center gap-1">
-                  <Brain className="w-3.5 h-3.5" />
-                  <span>Hand #{table.handCount} Solver Audit</span>
-                </span>
-                <button
-                  onClick={() => setShowGTODrawer(true)}
-                  className="text-amber-300 hover:underline font-mono"
-                >
-                  Inspect 13×13 Grid →
-                </button>
-              </div>
-              <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
-                {decisionHistory
-                  .filter((d) => d.handNumber === table.handCount)
-                  .map((rec) => {
-                    const badge = getGradeBadgeStyle(rec.grade);
-                    return (
-                      <div
-                        key={rec.id}
-                        className="flex items-center justify-between gap-2 text-[11px] bg-slate-900/90 px-2 py-1 rounded-lg border border-slate-800"
-                      >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span
-                            className={`text-[9px] font-black px-1.5 py-0.5 rounded border shrink-0 ${badge.bg} ${badge.text}`}
-                          >
-                            {badge.label}
-                          </span>
-                          <span className="font-mono uppercase text-[10px] text-slate-400 shrink-0">
-                            {rec.phase}:
-                          </span>
-                          <span className="text-white font-semibold truncate">
-                            {rec.chosenActionLabel}
-                          </span>
-                        </div>
-                        <span className="font-mono text-[10px] text-slate-400 shrink-0">
-                          {rec.evLossBB > 0 ? (
-                            <span className="text-rose-300">-{rec.evLossBB.toFixed(2)} BB</span>
-                          ) : (
-                            <span className="text-emerald-300">0.00 BB loss</span>
-                          )}
-                        </span>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-          )}
-
-          {isTournamentOver ? (
-            <button
-              onClick={onStartNewTournament}
-              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg"
-            >
-              <RefreshCw className="w-4 h-4" />
-              <span>Enter New VIP Sit & Go ($200 Stack)</span>
-            </button>
-          ) : (
-            <button
-              onClick={onStartNextHand}
-              className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-slate-950 font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg"
-            >
-              <span>Deal Next Hand</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* 5. BOTTOM PLAYER DOCK: Live GTO Advisor Pill, Quick-Emote Table Talk, Hole Cards, Staged Ring Chips, and Betting Controls */}
-      <div className="flex flex-col gap-2 max-w-2xl w-full mx-auto pointer-events-auto">
-        {/* Live GTO & Node-Locked Exploitative Advisor Pill */}
+      {/* 3. OUTER BOTTOM PLAYER DOCK: Low-Profile Telemetry + Primary Actions (Strictly <= 5 Buttons here) */}
+      <div
+        data-ux-panel="bottom-action-dock"
+        className="flex flex-col gap-1.5 max-w-xl w-full mx-auto pointer-events-auto"
+      >
+        {/* Single-Row GTO Telemetry Strip (0 <button> tags inside) */}
         <CompactGTOPill
           analysis={gtoAnalysis}
           solverMode={solverMode}
@@ -1346,309 +936,249 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
           onOpenFullDrawer={() => setShowGTODrawer(true)}
         />
 
-        {/* Compact Live Table-Talk & Croupier Feed + Interactive Quick-Emote Bar */}
-        {showBanterFeed && (
-          <div className="glass-panel px-3 py-2 rounded-xl border border-slate-800/90 flex flex-col gap-1.5">
-            {/* Last 2 Table-Talk / Dealer Callout Messages */}
-            <div className="flex flex-col gap-0.5 max-h-11 overflow-y-auto text-[11px]">
-              {chatMessages.slice(-2).map((msg) => (
-                <div key={msg.id} className="truncate">
-                  <span className="font-bold mr-1.5" style={{ color: msg.senderColor }}>
-                    {msg.isDealer ? '🎙️ ' : '💬 '}
-                    {msg.senderName}:
-                  </span>
-                  <span className="text-slate-200">{msg.text}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Interactive Quick-Emote / Table-Talk Buttons */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pt-1 border-t border-slate-800/80">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300/90 shrink-0 mr-1">
-                Table Talk:
-              </span>
-              {QUICK_EMOTES.map((emote) => (
-                <button
-                  key={emote.id}
-                  onClick={() => onSendQuickEmote(emote.id)}
-                  className="px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 hover:border-amber-400/50 text-[11px] font-semibold text-slate-200 flex items-center gap-1 shrink-0 transition-all active:scale-95"
-                  title={emote.text}
-                >
-                  <span>{emote.icon}</span>
-                  <span>{emote.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Staged Physical Chips Banner (When chips are dragged/clicked into the Betting Ring) */}
-        {table.stagedBet > 0 && humanPlayer.isTurn && !humanPlayer.folded && (
-          <div className="glass-panel px-4 py-2 rounded-xl border border-emerald-400/60 bg-emerald-950/60 flex items-center justify-between animate-fade-in">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-              <span className="text-xs font-bold text-emerald-200">
-                Staged in Betting Ring:{' '}
-                <strong className="font-mono text-emerald-300 text-sm">+${table.stagedBet}</strong>{' '}
-                (Total Bet: ${humanPlayer.currentBet + table.stagedBet})
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onClearStagedBet}
-                className="px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-xs font-bold text-slate-300 flex items-center gap-1"
-              >
-                <XCircle className="w-3.5 h-3.5 text-red-400" />
-                <span>Clear Ring</span>
-              </button>
-              <button
-                onClick={() => {
-                  const targetTotal = humanPlayer.currentBet + table.stagedBet;
-                  if (targetTotal <= table.currentHighBet) {
-                    onAction(isFreeToCheck ? { type: 'check' } : { type: 'call' });
-                  } else if (table.stagedBet >= humanPlayer.chips) {
-                    onAction({ type: 'allin' });
-                  } else {
-                    onAction({
-                      type: 'raise',
-                      amount: Math.max(minAllowedBet, targetTotal),
-                    });
-                  }
-                }}
-                className="px-3.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center gap-1 shadow-md"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Confirm Bet</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Human Status Bar, Hole Card Preview & Peeking Controls */}
-        <div className="glass-panel px-4 py-2 rounded-xl flex flex-wrap items-center justify-between gap-2 border-slate-800">
-          <div className="flex items-center gap-3">
-            {/* Live Hole Cards Badges (Hidden when facedown unless peeking or locked) */}
-            <div className="flex items-center gap-1.5">
-              {humanPlayer.cards.map((c) => {
-                const isRed = c.suit === 'hearts' || c.suit === 'diamonds';
-                return cardsVisible ? (
+        {/* Integrated Hero Status & Primary Action Dock */}
+        <div className="bg-[#090c12]/94 backdrop-blur-md px-3.5 py-2.5 rounded-2xl border border-[#d4af37]/45 shadow-2xl flex flex-col gap-2">
+          {/* Top Row of Dock: Hole Cards + Hero Stack + Peek / Lock Peek (Buttons #2 & #3) */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex items-center gap-1 shrink-0">
+                {humanPlayer.cards.map((c) => (
                   <div
                     key={c.id}
-                    className={`w-9 h-12 rounded-lg bg-white border-2 border-amber-300 shadow-md flex flex-col items-center justify-center font-black leading-none ${
-                      isRed ? 'text-red-600' : 'text-slate-900'
+                    className={`w-8 h-10 rounded-lg border flex flex-col items-center justify-center font-mono font-black leading-none text-xs shadow ${
+                      cardsVisible
+                        ? 'bg-[#f8fafc] text-[#090c12] border-[#d4af37]'
+                        : 'bg-[#0f141c] text-[#d4af37] border-[#d4af37]/50'
                     }`}
+                    title={
+                      cardsVisible
+                        ? `${getRankLabel(c.rank)}${getSuitSymbol(c.suit)}`
+                        : 'Facedown Hole Card (Hold Peek or Spacebar)'
+                    }
                   >
-                    <span className="text-xs">{getRankLabel(c.rank)}</span>
-                    <span className="text-sm">{getSuitSymbol(c.suit)}</span>
+                    {cardsVisible ? (
+                      <>
+                        <span className="text-[11px]">{getRankLabel(c.rank)}</span>
+                        <span className="text-xs">{getSuitSymbol(c.suit)}</span>
+                      </>
+                    ) : (
+                      <span>♠</span>
+                    )}
                   </div>
-                ) : (
-                  <div
-                    key={c.id}
-                    className="w-9 h-12 rounded-lg bg-gradient-to-br from-rose-950 to-slate-900 border border-amber-400/50 shadow-md flex items-center justify-center text-amber-400 text-xs font-bold"
-                    title="Facedown Hole Card — Hold Peek or Drag Card Corner"
-                  >
-                    ♠
-                  </div>
-                );
-              })}
-            </div>
-
-            <div>
-              <div className="text-[11px] font-bold text-blue-400 flex items-center gap-1.5">
-                <span>SEAT #0 • YOU</span>
-                {table.dealerSeat === 0 && (
-                  <span className="px-1.5 py-0.2 rounded bg-amber-400 text-slate-950 text-[10px] font-black">
-                    DEALER
-                  </span>
-                )}
-              </div>
-              <div className="text-xs sm:text-sm font-extrabold text-white">
-                {humanPlayer.folded
-                  ? 'Folded (In Muck)'
-                  : cardsVisible && handEval
-                  ? handEval.description
-                  : 'Cards Facedown (Pinch / Hold Space to Peek)'}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            {/* Quick Physical Chip Ring Taps ($1, $5, $25, $100) */}
-            {humanPlayer.isTurn && !humanPlayer.folded && table.phase !== 'showdown' && (
-              <div className="hidden sm:flex items-center gap-1 bg-slate-900/80 px-2 py-1 rounded-xl border border-slate-800">
-                <span className="text-[10px] text-slate-400 font-bold mr-1">Toss Chip:</span>
-                {([1, 5, 25, 100] as ChipDenomination[]).map((denom) => (
-                  <button
-                    key={denom}
-                    disabled={humanPlayer.chips - table.stagedBet < denom}
-                    onClick={() => onStageChip(denom)}
-                    className={`w-7 h-7 rounded-full font-mono text-[10px] font-black border transition-transform active:scale-90 disabled:opacity-30 ${
-                      denom === 1
-                        ? 'bg-slate-100 text-slate-900 border-blue-400'
-                        : denom === 5
-                        ? 'bg-red-600 text-white border-white'
-                        : denom === 25
-                        ? 'bg-emerald-600 text-white border-amber-300'
-                        : 'bg-slate-900 text-amber-300 border-amber-400'
-                    }`}
-                    title={`Toss $${denom} chip into the betting ring`}
-                  >
-                    ${denom}
-                  </button>
                 ))}
               </div>
-            )}
 
-            <div className="text-right">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">
-                Stack
-              </div>
-              <div className="text-base sm:text-lg font-mono font-black text-amber-300">
-                ${Math.max(0, humanPlayer.chips - table.stagedBet)}
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-wider text-[#94a3b8] uppercase">
+                  <span>SEAT #0 · YOU</span>
+                  {table.dealerSeat === 0 && (
+                    <span className="px-1.5 py-0.2 rounded bg-[#d4af37] text-[#090c12] text-[9px] font-black">
+                      BTN
+                    </span>
+                  )}
+                  {table.stagedBet > 0 && (
+                    <span
+                      onClick={onClearStagedBet}
+                      className="cursor-pointer px-1.5 py-0.2 rounded bg-[#d4af37]/20 border border-[#d4af37]/50 text-[#f3e5ab] font-mono text-[9px]"
+                      title="클릭하여 베팅 링에 올려둔 칩 초기화"
+                    >
+                      링 +${table.stagedBet} ✕
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs sm:text-sm font-extrabold text-[#f8fafc] truncate">
+                  {humanPlayer.folded
+                    ? 'Folded (폴드됨)'
+                    : cardsVisible && handEval
+                    ? handEval.description
+                    : '홀카드 덮임 — Peek(스페이스바)으로 확인'}
+                </div>
               </div>
             </div>
 
-            {/* Hold to Peek + Lock Peek Toggle */}
-            {!humanPlayer.folded && humanPlayer.cards.length > 0 && (
-              <div className="flex items-center gap-1">
-                <button
-                  onMouseDown={() => onPeekCards(true)}
-                  onMouseUp={() => onPeekCards(false)}
-                  onMouseLeave={() => isPeeking && onPeekCards(false)}
-                  onTouchStart={() => onPeekCards(true)}
-                  onTouchEnd={() => onPeekCards(false)}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border ${
-                    isPeeking
-                      ? 'bg-amber-400 text-slate-950 border-amber-300 scale-95'
-                      : 'bg-slate-800/90 hover:bg-slate-700 text-amber-300 border-amber-500/30'
-                  }`}
-                  title="Hold to peel card corners up (or hold Spacebar)"
-                >
-                  {isPeeking ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  <span>Peek</span>
-                </button>
-
-                <button
-                  onClick={onTogglePeekLock}
-                  className={`p-2 rounded-xl text-xs font-bold border transition-all ${
-                    isPeekLocked
-                      ? 'bg-amber-500/25 text-amber-300 border-amber-400/60'
-                      : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:text-slate-200'
-                  }`}
-                  title={isPeekLocked ? 'Cards Locked Face-Up' : 'Lock Peek (Keep Cards Revealed)'}
-                >
-                  {isPeekLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Action Controls (Visible when it is Human's Turn) */}
-        {humanPlayer.isTurn && !humanPlayer.folded && table.phase !== 'showdown' && (
-          <div className="glass-panel p-2.5 rounded-2xl flex flex-col gap-2 border-amber-400/50 shadow-2xl">
-            {/* Raise Slider & Presets */}
-            {humanPlayer.chips > callAmount && (
-              <div className="flex items-center gap-3 bg-slate-900/70 px-3 py-1.5 rounded-xl">
-                <span className="text-xs font-bold text-amber-300 font-mono min-w-24">
-                  Raise To: ${Math.max(betAmount, minAllowedBet)}
-                </span>
-                <input
-                  type="range"
-                  min={minAllowedBet}
-                  max={maxAllowedBet}
-                  step={1}
-                  value={Math.max(betAmount, minAllowedBet)}
-                  onChange={handleSliderChange}
-                  className="flex-1 accent-amber-400 cursor-pointer"
-                />
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={() => setBetAmount(minAllowedBet)}
-                    className="px-2 py-1 bg-slate-800 text-[11px] font-bold rounded hover:bg-slate-700 text-slate-200"
-                  >
-                    Min
-                  </button>
-                  <button
-                    onClick={() =>
-                      setBetAmount(
-                        Math.min(
-                          maxAllowedBet,
-                          Math.max(minAllowedBet, table.currentHighBet + table.pot)
-                        )
-                      )
-                    }
-                    className="px-2 py-1 bg-slate-800 text-[11px] font-bold rounded hover:bg-slate-700 text-slate-200"
-                  >
-                    Pot
-                  </button>
-                  <button
-                    onClick={() => setBetAmount(maxAllowedBet)}
-                    className="px-2 py-1 bg-red-900/40 text-red-300 text-[11px] font-bold rounded hover:bg-red-800/50"
-                  >
-                    All-In
-                  </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="text-right mr-1">
+                <div className="text-[9px] text-[#94a3b8] uppercase tracking-wider font-bold">
+                  보유 스택
+                </div>
+                <div className="text-sm sm:text-base font-mono font-black text-[#f3e5ab]">
+                  ${Math.max(0, humanPlayer.chips - table.stagedBet)}
                 </div>
               </div>
-            )}
 
-            {/* Primary Turn Buttons */}
-            <div className="grid grid-cols-3 gap-2.5">
-              <button
-                onClick={() => onAction({ type: 'fold' })}
-                className="py-2 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-red-400 font-extrabold text-sm border border-red-500/25 transition-all flex items-center justify-center gap-1.5"
-              >
-                <span>Fold</span>
-                <span className="text-[10px] text-slate-400 font-normal hidden sm:inline">
-                  (Flick)
-                </span>
-              </button>
+              {!humanPlayer.folded && humanPlayer.cards.length > 0 && (
+                <div className="flex items-center gap-1">
+                  {/* Button #2: Hold to Peek */}
+                  <button
+                    data-testid="action-peek"
+                    onMouseDown={() => onPeekCards(true)}
+                    onMouseUp={() => onPeekCards(false)}
+                    onMouseLeave={() => isPeeking && onPeekCards(false)}
+                    onTouchStart={() => onPeekCards(true)}
+                    onTouchEnd={() => onPeekCards(false)}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-all border ${
+                      isPeeking
+                        ? 'bg-[#d4af37] text-[#090c12] border-[#f3e5ab]'
+                        : 'bg-[#0f141c] hover:bg-slate-900 text-[#f3e5ab] border-[#d4af37]/40'
+                    }`}
+                    title="누르고 있는 동안 카드 모서리 확인 (스페이스바)"
+                  >
+                    {isPeeking ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    <span>Peek</span>
+                  </button>
 
-              <button
-                onClick={() => onAction(isFreeToCheck ? { type: 'check' } : { type: 'call' })}
-                className="py-2 px-4 rounded-xl bg-blue-600/30 hover:bg-blue-600/50 active:scale-95 text-blue-200 font-extrabold text-sm border border-blue-500/40 transition-all flex items-center justify-center gap-1.5"
-              >
-                <span>
-                  {isFreeToCheck ? 'Check' : `Call $${Math.min(humanPlayer.chips, callAmount)}`}
-                </span>
-                {isFreeToCheck && (
-                  <span className="text-[10px] text-blue-300/70 font-normal hidden sm:inline">
-                    (2x Tap)
-                  </span>
-                )}
-              </button>
-
-              {humanPlayer.chips <= callAmount ? (
-                <button
-                  onClick={() => onAction({ type: 'allin' })}
-                  className="py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 active:scale-95 text-slate-950 font-black text-sm border border-amber-300 transition-all flex items-center justify-center gap-1.5 shadow-lg"
-                >
-                  <Flame className="w-4 h-4" />
-                  <span>All-In (${humanPlayer.chips})</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    const targetAmt = Math.max(betAmount, minAllowedBet);
-                    if (targetAmt >= maxAllowedBet) {
-                      onAction({ type: 'allin' });
-                    } else {
-                      onAction({ type: 'raise', amount: targetAmt });
-                    }
-                  }}
-                  className="py-2 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 active:scale-95 text-slate-950 font-black text-sm border border-amber-300 transition-all flex items-center justify-center gap-1.5 shadow-lg"
-                >
-                  <Flame className="w-4 h-4" />
-                  <span>
-                    {table.currentHighBet === 0
-                      ? `Bet $${Math.max(betAmount, minAllowedBet)}`
-                      : `Raise to $${Math.max(betAmount, minAllowedBet)}`}
-                  </span>
-                </button>
+                  {/* Button #3: Lock Peek */}
+                  <button
+                    data-testid="action-lock-peek"
+                    onClick={onTogglePeekLock}
+                    className={`p-1.5 rounded-xl text-xs font-bold border transition-all ${
+                      isPeekLocked
+                        ? 'bg-[#d4af37]/25 text-[#f3e5ab] border-[#d4af37]'
+                        : 'bg-[#0f141c] text-[#94a3b8] border-slate-800 hover:text-[#f8fafc]'
+                    }`}
+                    title={isPeekLocked ? '홀카드 오픈 고정됨' : '홀카드 오픈 상태 고정'}
+                  >
+                    {isPeekLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
               )}
             </div>
           </div>
-        )}
+
+          {/* Bottom Row: Showdown Result OR Primary Turn Actions (Buttons #4, #5, #6) */}
+          {table.phase === 'showdown' && table.winners.length > 0 ? (
+            <div className="pt-2 border-t border-slate-800/90 flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-xs font-black text-[#f3e5ab] flex items-center gap-1.5">
+                  <Trophy className="w-3.5 h-3.5 text-[#d4af37] shrink-0" />
+                  <span className="truncate">
+                    {table.winners.map((w) => w.playerName).join(' & ')} 승리 (+$
+                    {table.winners.reduce((acc, w) => acc + w.amount, 0)})
+                  </span>
+                </div>
+                <div className="text-[11px] text-[#94a3b8] truncate">
+                  {table.winners
+                    .map((w) => `${w.potLabel ? `[${w.potLabel}] ` : ''}${w.handName}`)
+                    .join(' · ')}
+                </div>
+              </div>
+
+              {/* Button #4 in Showdown: Next Hand / New Tournament */}
+              <button
+                data-testid="action-next-hand"
+                onClick={isTournamentOver ? onStartNewTournament : onStartNextHand}
+                className="px-4 py-2 rounded-xl bg-[#d4af37] hover:bg-[#f3e5ab] text-[#090c12] font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-lg shrink-0"
+              >
+                <span>{isTournamentOver ? '새 토너먼트 시작' : '다음 핸드 딜링'}</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            humanPlayer.isTurn &&
+            !humanPlayer.folded &&
+            table.phase !== 'showdown' && (
+              <div className="pt-1.5 border-t border-slate-800/90 flex flex-col gap-1.5">
+                {/* Compact Sizing Slider Track (Uses clickable spans for quick presets to keep button count <= 6) */}
+                {humanPlayer.chips > callAmount && (
+                  <div className="flex items-center gap-2.5 bg-[#0f141c] px-2.5 py-1 rounded-xl border border-slate-800/90">
+                    <span className="text-[11px] font-bold text-[#f3e5ab] font-mono min-w-24">
+                      사이징: ${Math.max(betAmount, minAllowedBet)}
+                    </span>
+                    <input
+                      type="range"
+                      min={minAllowedBet}
+                      max={maxAllowedBet}
+                      step={1}
+                      value={Math.max(betAmount, minAllowedBet)}
+                      onChange={handleSliderChange}
+                      className="flex-1 accent-[#d4af37] cursor-pointer h-1.5"
+                    />
+                    <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-[#94a3b8]">
+                      <span
+                        onClick={() => setBetAmount(minAllowedBet)}
+                        className="cursor-pointer px-1.5 py-0.5 rounded bg-[#090c12] hover:text-[#f3e5ab] border border-slate-800"
+                      >
+                        Min
+                      </span>
+                      <span
+                        onClick={() =>
+                          setBetAmount(
+                            Math.min(
+                              maxAllowedBet,
+                              Math.max(minAllowedBet, table.currentHighBet + table.pot)
+                            )
+                          )
+                        }
+                        className="cursor-pointer px-1.5 py-0.5 rounded bg-[#090c12] hover:text-[#f3e5ab] border border-slate-800"
+                      >
+                        Pot
+                      </span>
+                      <span
+                        onClick={() => setBetAmount(maxAllowedBet)}
+                        className="cursor-pointer px-1.5 py-0.5 rounded bg-[#090c12] hover:text-[#f3e5ab] border border-slate-800"
+                      >
+                        Max
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3 Primary Turn Action Buttons (Buttons #4, #5, #6) */}
+                <div className="grid grid-cols-3 gap-2">
+                  {/* Button #4: Fold */}
+                  <button
+                    data-testid="action-fold"
+                    onClick={() => onAction({ type: 'fold' })}
+                    className="py-2 px-3 rounded-xl bg-[#0f141c] hover:bg-slate-900 active:scale-95 text-[#94a3b8] hover:text-[#f8fafc] font-extrabold text-xs sm:text-sm border border-slate-800 transition-all flex items-center justify-center gap-1"
+                  >
+                    <span>Fold</span>
+                  </button>
+
+                  {/* Button #5: Check / Call */}
+                  <button
+                    data-testid="action-check-call"
+                    onClick={() => onAction(isFreeToCheck ? { type: 'check' } : { type: 'call' })}
+                    className="py-2 px-3 rounded-xl bg-[#0f141c] hover:bg-slate-900 active:scale-95 text-[#f8fafc] font-extrabold text-xs sm:text-sm border border-[#d4af37]/45 hover:border-[#d4af37] transition-all flex items-center justify-center gap-1"
+                  >
+                    <span>
+                      {isFreeToCheck ? 'Check' : `Call $${Math.min(humanPlayer.chips, callAmount)}`}
+                    </span>
+                  </button>
+
+                  {/* Button #6: Bet / Raise / All-In */}
+                  {humanPlayer.chips <= callAmount ? (
+                    <button
+                      data-testid="action-raise"
+                      onClick={() => onAction({ type: 'allin' })}
+                      className="py-2 px-3 rounded-xl bg-[#d4af37] hover:bg-[#f3e5ab] active:scale-95 text-[#090c12] font-black text-xs sm:text-sm border border-[#f3e5ab] transition-all flex items-center justify-center gap-1 shadow-lg"
+                    >
+                      <span>All-In (${humanPlayer.chips})</span>
+                    </button>
+                  ) : (
+                    <button
+                      data-testid="action-raise"
+                      onClick={() => {
+                        const targetAmt = Math.max(betAmount, minAllowedBet);
+                        if (targetAmt >= maxAllowedBet) {
+                          onAction({ type: 'allin' });
+                        } else {
+                          onAction({ type: 'raise', amount: targetAmt });
+                        }
+                      }}
+                      className="py-2 px-3 rounded-xl bg-[#d4af37] hover:bg-[#f3e5ab] active:scale-95 text-[#090c12] font-black text-xs sm:text-sm border border-[#f3e5ab] transition-all flex items-center justify-center gap-1 shadow-lg"
+                    >
+                      <span>
+                        {table.currentHighBet === 0
+                          ? `Bet $${Math.max(betAmount, minAllowedBet)}`
+                          : `Raise $${Math.max(betAmount, minAllowedBet)}`}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          )}
+        </div>
       </div>
 
       {/* Expandable 13x13 Hand Range Matrix & GTO vs Node-Locked Exploit Drawer */}
@@ -1668,3 +1198,4 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
     </div>
   );
 };
+

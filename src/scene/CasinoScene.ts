@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import {
   Card,
   PlayerState,
@@ -13,17 +15,26 @@ import {
   CameraPresetId,
   SpatialAuditReport,
   SpatialAuditCheck,
+  ScreenBoundingRect,
 } from '../types/poker';
 import {
   getCardBackTexture,
+  getCardBackRoughnessMap,
   getCardFrontTexture,
+  getCardLinenNormalMap,
   getCasinoFeltTexture,
+  getMonteCarloRugTexture,
+  getCofferedWallTexture,
   getChipTextures,
+  createSculptedClayChipGeometry,
+  createRoundedCamberedCardGeometry,
   drawAvatarPlaque,
   drawOnFeltBetBadge,
   drawSpatialButton,
   getPhoneScreenTexture,
   populate3DCharacterHeadAndTorso,
+  createRealisticSkinMaterial,
+  buildArticulatedForearmAndHand,
   CharacterModelRole,
 } from './proceduralAssets';
 import { pokerAudio } from '../audio/pokerAudio';
@@ -101,11 +112,14 @@ export class CasinoScene {
   private container: HTMLElement;
   private clock = new THREE.Clock();
   private textureLoader = new THREE.TextureLoader();
+  private gltfLoader = new GLTFLoader();
 
   // Mode flags & Camera Preset
   public isTitleMode: boolean = true;
   private titleOrbitAngle: number = 0;
   public currentCameraPreset: CameraPresetId = 'seat0_pov';
+  private show2DHUD: boolean = true;
+  private isInXR: boolean = false;
 
   // Lighting refs for dynamic All-In / Showdown choreography
   private ambientLight: THREE.AmbientLight | null = null;
@@ -142,9 +156,10 @@ export class CasinoScene {
   // 3D On-Felt Bet Badges per seat
   private betBadges: Map<number, BetBadgeRef> = new Map();
 
-  // Debug Wireframe Overlay Group
+  // Debug Wireframe Overlay Group & Salon Architectural Room Group
   private debugOverlayGroup: THREE.Group | null = null;
   public isDebugOverlayEnabled: boolean = false;
+  private salonRoomGroup: THREE.Group | null = null;
 
   // Dealer rig, button & spotlight
   private dealerButtonMesh: THREE.Mesh | null = null;
@@ -170,8 +185,8 @@ export class CasinoScene {
   private dragMode: 'none' | 'chip' | 'card' = 'none';
   private draggedChipDenom: ChipDenomination = 25;
   private draggedChipGroup: THREE.Group | null = null;
-  private cardDragStartZ: number = 0.72;
-  private cardDragCurrentZ: number = 0.72;
+  private cardDragStartZ: number = 0.62;
+  private cardDragCurrentZ: number = 0.62;
   private lastFeltTapTime: number = 0;
   private raycaster = new THREE.Raycaster();
   private feltPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.765);
@@ -192,7 +207,7 @@ export class CasinoScene {
 
   // Seat Coordinates in 3D world (Clockwise from Seat 0: Human at Bottom Center, Viktor Left, Elena Top-Left, Bao Top-Right, Marcus Right)
   public static readonly SEAT_POSITIONS = [
-    new THREE.Vector3(0, 0.762, 0.68),      // Seat 0: Human Player (Bottom Center)
+    new THREE.Vector3(0, 0.762, 0.62),      // Seat 0: Human Player (Bottom Center - sightline-safe above 2D bottom dock)
     new THREE.Vector3(-1.02, 0.762, 0.32),  // Seat 1: Viktor (Left)
     new THREE.Vector3(-0.72, 0.762, -0.50), // Seat 2: Elena (Top Left)
     new THREE.Vector3(0.72, 0.762, -0.50),  // Seat 3: Bao (Top Right)
@@ -228,7 +243,7 @@ export class CasinoScene {
     // 1. Scene Setup
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#060911');
-    this.scene.fog = new THREE.FogExp2('#060911', 0.11);
+    this.scene.fog = new THREE.FogExp2('#060911', 0.10);
 
     // 2. Camera Setup & XR Camera Rig
     this.cameraRig = new THREE.Group();
@@ -242,8 +257,8 @@ export class CasinoScene {
       0.05,
       40
     );
-    this.camera.position.set(0, 1.48, 1.54);
-    this.camera.lookAt(0, 0.80, -0.06);
+    this.camera.position.set(0, 1.52, 1.62);
+    this.camera.lookAt(0, 0.78, -0.02);
     this.cameraRig.add(this.camera);
 
     // 3. WebGLRenderer Setup with WebXR, ACES Tone Mapping & preserveDrawingBuffer for dogfooding capture
@@ -262,13 +277,31 @@ export class CasinoScene {
     this.renderer.xr.enabled = true;
     container.appendChild(this.renderer.domElement);
 
-    // 4. Procedural PBR Studio Environment Reflections (RoomEnvironment)
+    // 4. Studio Environment Reflections (Immediate RoomEnvironment + Poly Haven 1K Salon HDRI Upgrade)
     const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
     pmremGenerator.compileEquirectangularShader();
     const roomEnv = new RoomEnvironment();
     this.scene.environment = pmremGenerator.fromScene(roomEnv, 0.04).texture;
     roomEnv.dispose();
     pmremGenerator.dispose();
+
+    const rgbeLoader = new RGBELoader();
+    rgbeLoader.load(
+      '/assets/pbr/salon_env_1k.hdr',
+      (hdrTexture) => {
+        hdrTexture.mapping = THREE.EquirectangularReflectionMapping;
+        const hdrPmrem = new THREE.PMREMGenerator(this.renderer);
+        hdrPmrem.compileEquirectangularShader();
+        const envMap = hdrPmrem.fromEquirectangular(hdrTexture).texture;
+        this.scene.environment = envMap;
+        hdrTexture.dispose();
+        hdrPmrem.dispose();
+      },
+      undefined,
+      () => {
+        // Keep synchronous RoomEnvironment fallback if offline/missing
+      }
+    );
 
     // 5. Orbit Controls (Desktop fallback)
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -277,7 +310,7 @@ export class CasinoScene {
     this.controls.maxPolarAngle = Math.PI / 2.08;
     this.controls.minDistance = 0.45;
     this.controls.maxDistance = 4.2;
-    this.controls.target.set(0, 0.80, -0.06);
+    this.controls.target.set(0, 0.78, -0.02);
 
     // 6. Build VIP Casino Environment, Table, Instanced Chips, On-Felt Badges & Spatial UI
     this.setupLighting();
@@ -294,8 +327,8 @@ export class CasinoScene {
     window.addEventListener('resize', this.onResize);
     const dom = this.renderer.domElement;
     dom.addEventListener('pointerdown', this.onPointerDown);
-    window.addEventListener('pointermove', this.onPointerMove);
-    window.addEventListener('pointerup', this.onPointerUp);
+    dom.addEventListener('pointermove', this.onPointerMove);
+    dom.addEventListener('pointerup', this.onPointerUp);
 
     this.startAnimationLoop();
     (window as unknown as Record<string, unknown>).__casinoScene = this;
@@ -319,13 +352,25 @@ export class CasinoScene {
     }
   }
 
+  public setShow2DHUD(show: boolean) {
+    this.show2DHUD = show;
+    this.syncSpatialButtonsVisibility();
+  }
+
+  private syncSpatialButtonsVisibility() {
+    const visible = !this.show2DHUD || this.isInXR;
+    for (const btn of this.spatialButtons) {
+      btn.mesh.visible = visible;
+    }
+  }
+
   public setCameraPreset(preset: CameraPresetId) {
     this.currentCameraPreset = preset;
     this.isTitleMode = false;
 
     const presets: Record<CameraPresetId, { pos: [number, number, number]; target: [number, number, number] }> = {
-      seat0_pov: { pos: [0, 1.48, 1.54], target: [0, 0.80, -0.06] },
-      top_down: { pos: [0, 2.68, 0.08], target: [0, 0.74, -0.02] },
+      seat0_pov: { pos: [0, 1.52, 1.62], target: [0, 0.78, -0.02] },
+      top_down: { pos: [0, 2.58, 0.08], target: [0, 0.74, -0.02] },
       macro_cards_chips: { pos: [0.18, 1.05, 1.06], target: [0, 0.78, 0.52] },
       bao_tell_closeup: { pos: [0.32, 1.24, -0.06], target: [0.94, 1.12, -0.65] },
       viktor_marcus_rim: { pos: [-1.42, 1.32, 0.78], target: [0.25, 0.92, -0.12] },
@@ -339,7 +384,12 @@ export class CasinoScene {
     this.controls.update();
   }
 
-  public setXRPresenting(presenting: boolean, isFloorSpace: boolean = true) {
+  public setXRPresenting(presenting: boolean, isFloorSpace: boolean = true, isARPassthrough: boolean = false) {
+    this.isInXR = presenting;
+    this.syncSpatialButtonsVisibility();
+    if (this.salonRoomGroup) {
+      this.salonRoomGroup.visible = !(presenting && isARPassthrough);
+    }
     if (presenting) {
       this.isTitleMode = false;
       this.controls.enabled = false;
@@ -407,40 +457,117 @@ export class CasinoScene {
   }
 
   private buildVIPRoom() {
-    // Dark architectural floor
+    const salonGroup = new THREE.Group();
+    salonGroup.name = 'MonteCarloSalonRoom';
+    this.salonRoomGroup = salonGroup;
+    this.scene.add(salonGroup);
+
+    // 1. Poly Haven Herringbone Parquet Hardwood Floor (1K PBR)
+    const floorDiff = this.textureLoader.load('/assets/pbr/floor_diff_1k.jpg');
+    floorDiff.colorSpace = THREE.SRGBColorSpace;
+    floorDiff.wrapS = THREE.RepeatWrapping;
+    floorDiff.wrapT = THREE.RepeatWrapping;
+    floorDiff.repeat.set(6, 6);
+
+    const floorRough = this.textureLoader.load('/assets/pbr/floor_rough_1k.jpg');
+    floorRough.wrapS = THREE.RepeatWrapping;
+    floorRough.wrapT = THREE.RepeatWrapping;
+    floorRough.repeat.set(6, 6);
+
+    const floorNor = this.textureLoader.load('/assets/pbr/floor_nor_1k.jpg');
+    floorNor.wrapS = THREE.RepeatWrapping;
+    floorNor.wrapT = THREE.RepeatWrapping;
+    floorNor.repeat.set(6, 6);
+
     const floorGeo = new THREE.PlaneGeometry(18, 18);
     const floorMat = new THREE.MeshStandardMaterial({
-      color: '#0c0f17',
-      roughness: 0.82,
-      metalness: 0.12,
+      color: '#633d24',
+      map: floorDiff,
+      roughnessMap: floorRough,
+      normalMap: floorNor,
+      normalScale: new THREE.Vector2(0.42, 0.42),
+      roughness: 0.68,
+      metalness: 0.02,
+      envMapIntensity: 0.38,
     });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
-    this.scene.add(floor);
+    salonGroup.add(floor);
 
-    // Architectural mahogany wall pillars (batched into 1 InstancedMesh)
-    const pillarGeo = new THREE.BoxGeometry(0.35, 3.6, 0.15);
+    // 2. Ornate Woven Monte Carlo Area Rug beneath the VIP Table & Armchairs
+    const rugTex = getMonteCarloRugTexture();
+    const fabricNor = this.textureLoader.load('/assets/pbr/fabric_nor_1k.jpg');
+    fabricNor.wrapS = THREE.RepeatWrapping;
+    fabricNor.wrapT = THREE.RepeatWrapping;
+    fabricNor.repeat.set(10, 10);
+
+    const rugGeo = new THREE.PlaneGeometry(5.1, 3.65);
+    const rugMat = new THREE.MeshStandardMaterial({
+      map: rugTex,
+      normalMap: fabricNor,
+      normalScale: new THREE.Vector2(0.35, 0.35),
+      roughness: 0.88,
+      metalness: 0.06,
+    });
+    const rugMesh = new THREE.Mesh(rugGeo, rugMat);
+    rugMesh.rotation.x = -Math.PI / 2;
+    rugMesh.position.set(0, 0.004, 0);
+    rugMesh.receiveShadow = true;
+    salonGroup.add(rugMesh);
+
+    // 3. Coffered Mahogany & Gold-Leaf Circular Salon Boiserie Wall Enclosure
+    const cofferedWallTex = getCofferedWallTexture();
+    cofferedWallTex.repeat.set(12, 1);
+    const salonWallGeo = new THREE.CylinderGeometry(5.42, 5.42, 3.8, 48, 1, true);
+    const salonWallMat = new THREE.MeshStandardMaterial({
+      map: cofferedWallTex,
+      roughness: 0.42,
+      metalness: 0.22,
+      side: THREE.BackSide,
+    });
+    const salonWall = new THREE.Mesh(salonWallGeo, salonWallMat);
+    salonWall.position.y = 1.9;
+    salonWall.receiveShadow = true;
+    salonGroup.add(salonWall);
+
+    // 4. Architectural Mahogany Pilasters + Warm Brass Wall Sconces (batched into InstancedMeshes)
+    const pillarGeo = new THREE.BoxGeometry(0.35, 3.7, 0.16);
     const pillarMat = new THREE.MeshStandardMaterial({
       color: '#1e100b',
-      roughness: 0.35,
-      metalness: 0.2,
+      roughness: 0.32,
+      metalness: 0.22,
     });
     const pillarInstanced = new THREE.InstancedMesh(pillarGeo, pillarMat, 12);
+
+    const sconceGeo = new THREE.CylinderGeometry(0.055, 0.032, 0.18, 16);
+    const sconceMat = new THREE.MeshStandardMaterial({
+      color: '#fef08a',
+      emissive: '#f59e0b',
+      emissiveIntensity: 1.85,
+      roughness: 0.2,
+    });
+    const sconceInstanced = new THREE.InstancedMesh(sconceGeo, sconceMat, 12);
+
     for (let i = 0; i < 12; i++) {
       const angle = (i / 12) * Math.PI * 2;
-      const radius = 5.2;
+      const radius = 5.22;
       this.dummyEuler.set(0, -angle + Math.PI / 2, 0);
       this.dummyQuaternion.setFromEuler(this.dummyEuler);
-      this.dummyPosition.set(Math.cos(angle) * radius, 1.8, Math.sin(angle) * radius);
+      this.dummyPosition.set(Math.cos(angle) * radius, 1.85, Math.sin(angle) * radius);
       this.dummyMatrix.compose(this.dummyPosition, this.dummyQuaternion, this.dummyScale);
       pillarInstanced.setMatrixAt(i, this.dummyMatrix);
-    }
-    this.scene.add(pillarInstanced);
 
-    // Backlit Nano Banana Art Deco VIP Wall Mural behind Dealer
+      const sconceR = 5.08;
+      this.dummyPosition.set(Math.cos(angle) * sconceR, 2.15, Math.sin(angle) * sconceR);
+      this.dummyMatrix.compose(this.dummyPosition, this.dummyQuaternion, this.dummyScale);
+      sconceInstanced.setMatrixAt(i, this.dummyMatrix);
+    }
+    salonGroup.add(pillarInstanced, sconceInstanced);
+
+    // 5. Backlit Art Deco VIP Wall Mural above the Mahogany Credenza & Crystal Decanter Bar
     const artGroup = new THREE.Group();
-    artGroup.position.set(0, 1.85, -3.85);
+    artGroup.position.set(0, 1.98, -3.85);
     const frameGeo = new THREE.BoxGeometry(2.55, 1.48, 0.06);
     const goldBrassMat = new THREE.MeshStandardMaterial({
       color: '#d4af37',
@@ -461,109 +588,276 @@ export class CasinoScene {
       metalness: 0.15,
       emissive: '#ffffff',
       emissiveMap: wallArtTex,
-      emissiveIntensity: 0.32,
+      emissiveIntensity: 0.34,
     });
     const canvasMesh = new THREE.Mesh(canvasGeo, canvasMat);
     canvasMesh.position.z = 0.035;
     artGroup.add(canvasMesh);
-    this.scene.add(artGroup);
 
-    // VIP Velvet Rope Brass Stanchions (placed around outer perimeter r = 3.85m so they never clutter player closeups)
-    const stanchionGeo = new THREE.CylinderGeometry(0.022, 0.04, 0.74, 16);
-    const stanchionInstanced = new THREE.InstancedMesh(stanchionGeo, goldBrassMat, 8);
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 2 + 0.35;
-      const r = 3.85;
-      this.dummyPosition.set(Math.cos(angle) * r, 0.37, Math.sin(angle) * r * 0.85);
-      this.dummyQuaternion.identity();
-      this.dummyMatrix.compose(this.dummyPosition, this.dummyQuaternion, this.dummyScale);
-      stanchionInstanced.setMatrixAt(i, this.dummyMatrix);
-    }
-    this.scene.add(stanchionInstanced);
+    // Warm bar & mural accent light illuminating the crystal decanters & gold frame behind the dealer
+    const credenzaLight = new THREE.PointLight('#ffd89b', 1.35, 3.4);
+    credenzaLight.position.set(0, -0.58, 0.55);
+    artGroup.add(credenzaLight);
 
-    // Overhead Pendant Lamp Shade + Brass Ring
-    const shadeGeo = new THREE.CylinderGeometry(0.32, 0.46, 0.22, 32);
-    const shadeMat = new THREE.MeshStandardMaterial({
-      color: '#18120e',
-      metalness: 0.75,
-      roughness: 0.25,
-    });
-    const shade = new THREE.Mesh(shadeGeo, shadeMat);
-    shade.position.set(0, 2.75, 0);
-    this.scene.add(shade);
+    salonGroup.add(artGroup);
   }
 
   private buildPokerTable() {
-    const tableGroup = new THREE.Group();
+    const tableRoot = new THREE.Group();
+    tableRoot.name = 'MonteCarloTableAndSalonProps';
+    this.scene.add(tableRoot);
 
-    // 1. Emerald Felt Surface (#0a3d24)
+    // 1. Synchronous Initial Table Mesh (immediately active at frame 0 before async GLB load completes)
+    const fallbackGroup = new THREE.Group();
+    tableRoot.add(fallbackGroup);
+
     const feltTexture = getCasinoFeltTexture();
-    const feltGeo = new THREE.CylinderGeometry(1.26, 1.26, 0.04, 64);
-    feltGeo.scale(1, 1, 0.66);
+    const fabricNor = this.textureLoader.load('/assets/pbr/fabric_nor_1k.jpg');
+    fabricNor.wrapS = THREE.RepeatWrapping;
+    fabricNor.wrapT = THREE.RepeatWrapping;
+    fabricNor.repeat.set(12, 12);
+
+    const fabricRough = this.textureLoader.load('/assets/pbr/fabric_rough_1k.jpg');
+    fabricRough.wrapS = THREE.RepeatWrapping;
+    fabricRough.wrapT = THREE.RepeatWrapping;
+    fabricRough.repeat.set(12, 12);
+
+    const woodDiff = this.textureLoader.load('/assets/pbr/wood_diff_1k.jpg');
+    woodDiff.colorSpace = THREE.SRGBColorSpace;
+    woodDiff.wrapS = THREE.RepeatWrapping;
+    woodDiff.wrapT = THREE.RepeatWrapping;
+    woodDiff.repeat.set(3, 3);
+
+    const woodRough = this.textureLoader.load('/assets/pbr/wood_rough_1k.jpg');
+    woodRough.wrapS = THREE.RepeatWrapping;
+    woodRough.wrapT = THREE.RepeatWrapping;
+    woodRough.repeat.set(3, 3);
+
+    const woodNor = this.textureLoader.load('/assets/pbr/wood_nor_1k.jpg');
+    woodNor.wrapS = THREE.RepeatWrapping;
+    woodNor.wrapT = THREE.RepeatWrapping;
+    woodNor.repeat.set(3, 3);
+
+    const leatherRough = this.textureLoader.load('/assets/pbr/leather_rough_1k.jpg');
+    leatherRough.wrapS = THREE.RepeatWrapping;
+    leatherRough.wrapT = THREE.RepeatWrapping;
+    leatherRough.repeat.set(6, 6);
+
+    const leatherNor = this.textureLoader.load('/assets/pbr/leather_nor_1k.jpg');
+    leatherNor.wrapS = THREE.RepeatWrapping;
+    leatherNor.wrapT = THREE.RepeatWrapping;
+    leatherNor.repeat.set(6, 6);
+
     const feltMat = new THREE.MeshStandardMaterial({
       map: feltTexture,
-      roughness: 0.88,
-      metalness: 0.04,
+      normalMap: fabricNor,
+      normalScale: new THREE.Vector2(0.28, 0.28),
+      roughnessMap: fabricRough,
+      roughness: 0.86,
+      metalness: 0.03,
     });
+
+    const woodMat = new THREE.MeshPhysicalMaterial({
+      color: '#5a2714',
+      map: woodDiff,
+      roughnessMap: woodRough,
+      normalMap: woodNor,
+      normalScale: new THREE.Vector2(0.16, 0.16),
+      roughness: 0.32,
+      metalness: 0.04,
+      clearcoat: 0.55,
+      clearcoatRoughness: 0.28,
+      envMapIntensity: 0.55,
+    });
+
+    const mahoganyMat = new THREE.MeshPhysicalMaterial({
+      color: '#32150c',
+      map: woodDiff,
+      roughnessMap: woodRough,
+      normalMap: woodNor,
+      normalScale: new THREE.Vector2(0.20, 0.20),
+      roughness: 0.34,
+      metalness: 0.04,
+      clearcoat: 0.48,
+      clearcoatRoughness: 0.28,
+      envMapIntensity: 0.55,
+    });
+
+    const leatherMat = new THREE.MeshPhysicalMaterial({
+      color: '#161318',
+      roughnessMap: leatherRough,
+      normalMap: leatherNor,
+      normalScale: new THREE.Vector2(0.65, 0.65),
+      roughness: 0.48,
+      metalness: 0.08,
+      clearcoat: 0.28,
+      clearcoatRoughness: 0.35,
+      sheen: 0.35,
+      sheenColor: new THREE.Color('#2d2633'),
+    });
+
+    const brassMat = new THREE.MeshStandardMaterial({
+      color: '#d4af37',
+      metalness: 0.92,
+      roughness: 0.20,
+      envMapIntensity: 1.45,
+    });
+
+    // Immediate synchronous fallback meshes (replaced seamlessly when /models/vip_poker_table.glb resolves)
+    const feltGeo = new THREE.CylinderGeometry(1.03, 1.03, 0.04, 64);
+    feltGeo.scale(1, 1, 0.66);
     const felt = new THREE.Mesh(feltGeo, feltMat);
-    felt.position.y = 0.74;
+    felt.position.y = 0.739;
     felt.receiveShadow = true;
     this.feltMesh = felt;
-    tableGroup.add(felt);
+    fallbackGroup.add(felt);
 
-    // 2. Dark Mahogany Wood Bevel Rim (#2a140e with specular polish)
-    const rimGeo = new THREE.CylinderGeometry(1.38, 1.35, 0.052, 64);
+    const rimGeo = new THREE.CylinderGeometry(1.36, 1.34, 0.052, 64);
     rimGeo.scale(1, 1, 0.66);
-    const woodMat = new THREE.MeshPhysicalMaterial({
-      color: '#2a140e',
-      roughness: 0.2,
-      metalness: 0.1,
-      clearcoat: 0.85,
-      clearcoatRoughness: 0.15,
-    });
     const woodRim = new THREE.Mesh(rimGeo, woodMat);
     woodRim.position.y = 0.732;
     woodRim.receiveShadow = true;
-    tableGroup.add(woodRim);
+    fallbackGroup.add(woodRim);
 
-    // 3. Padded Leather Armrest + Pedestal
     const armrestGeo = new THREE.TorusGeometry(1.37, 0.072, 20, 64);
     armrestGeo.scale(1, 0.66, 0.52);
     armrestGeo.rotateX(Math.PI / 2);
-    const leatherMat = new THREE.MeshStandardMaterial({
-      color: '#141115',
-      roughness: 0.65,
-      metalness: 0.08,
-    });
     const armrest = new THREE.Mesh(armrestGeo, leatherMat);
     armrest.position.y = 0.762;
     armrest.castShadow = true;
-    tableGroup.add(armrest);
+    fallbackGroup.add(armrest);
 
     const baseGeo = new THREE.CylinderGeometry(0.36, 0.52, 0.72, 32);
-    const pedestal = new THREE.Mesh(baseGeo, woodMat);
+    const pedestal = new THREE.Mesh(baseGeo, mahoganyMat);
     pedestal.position.y = 0.36;
     pedestal.castShadow = true;
-    tableGroup.add(pedestal);
+    fallbackGroup.add(pedestal);
 
-    // 4. Brushed Antique Brass Cup Holders (1 InstancedMesh for all 5 seats + brass foot ring)
-    const cupGeo = new THREE.CylinderGeometry(0.042, 0.038, 0.025, 24);
-    const brassMat = new THREE.MeshStandardMaterial({
-      color: '#d4af37',
-      metalness: 0.9,
-      roughness: 0.22,
-    });
-    const cupHolders = new THREE.InstancedMesh(cupGeo, brassMat, 5);
-    CasinoScene.SEAT_POSITIONS.forEach((seat, idx) => {
-      const angle = Math.atan2(seat.z, seat.x) + 0.26;
-      this.dummyPosition.set(Math.cos(angle) * 1.34, 0.785, Math.sin(angle) * 1.34 * 0.66);
-      this.dummyQuaternion.identity();
-      this.dummyMatrix.compose(this.dummyPosition, this.dummyQuaternion, this.dummyScale);
-      cupHolders.setMatrixAt(idx, this.dummyMatrix);
-    });
-    tableGroup.add(cupHolders);
+    // 2. Load Headless Blender 5.2 Monte Carlo Table & Salon Privé Prop Suite (/models/vip_poker_table.glb)
+    const gltfLoader = new GLTFLoader();
+    gltfLoader.load(
+      '/models/vip_poker_table.glb',
+      (gltf) => {
+        const modelRoot = gltf.scene;
+        modelRoot.name = 'BlenderMonteCarloVIPScene';
 
-    this.scene.add(tableGroup);
+        const emeraldShadeMat = new THREE.MeshPhysicalMaterial({
+          color: '#065f46',
+          emissive: '#047857',
+          emissiveIntensity: 0.52,
+          roughness: 0.12,
+          metalness: 0.12,
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.08,
+          transparent: true,
+          opacity: 0.88,
+        });
+
+        const bulbMat = new THREE.MeshStandardMaterial({
+          color: '#fffbeb',
+          emissive: '#fde047',
+          emissiveIntensity: 3.4,
+          roughness: 0.1,
+        });
+
+        const velvetRopeMat = new THREE.MeshPhysicalMaterial({
+          color: '#7f1d1d',
+          normalMap: fabricNor,
+          normalScale: new THREE.Vector2(0.4, 0.4),
+          roughness: 0.78,
+          metalness: 0.05,
+          sheen: 0.85,
+          sheenColor: new THREE.Color('#f87171'),
+          sheenRoughness: 0.45,
+        });
+
+        const crystalMat = new THREE.MeshPhysicalMaterial({
+          color: '#e2e8f0',
+          roughness: 0.06,
+          metalness: 0.18,
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.04,
+          transparent: true,
+          opacity: 0.62,
+          envMapIntensity: 1.9,
+        });
+
+        const whiskeyMat = new THREE.MeshPhysicalMaterial({
+          color: '#d97706',
+          emissive: '#b45309',
+          emissiveIntensity: 0.32,
+          roughness: 0.1,
+          metalness: 0.08,
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.06,
+          transparent: true,
+          opacity: 0.86,
+        });
+
+        const outerSalonMeshes: THREE.Object3D[] = [];
+
+        modelRoot.traverse((child) => {
+          if (!(child instanceof THREE.Mesh)) return;
+          const name = child.name;
+          const isOuterSalonProp =
+            name.startsWith('Salon_Chandelier_') ||
+            name.startsWith('Salon_Stanchions_') ||
+            name.startsWith('Salon_CredenzaBar_');
+
+          child.castShadow = !isOuterSalonProp;
+          child.receiveShadow = true;
+
+          if (name === 'Table_EmeraldFelt') {
+            feltTexture.flipY = false;
+            feltTexture.needsUpdate = true;
+            child.material = feltMat;
+            child.castShadow = false;
+            this.feltMesh = child;
+          } else if (name === 'Table_WalnutRacetrack') {
+            child.material = woodMat;
+          } else if (
+            name === 'Table_QuiltedLeatherBolster' ||
+            name === 'Salon_VIPChairs_QuiltedBlackLeather'
+          ) {
+            child.material = leatherMat;
+          } else if (name.includes('AntiqueBrass')) {
+            child.material = brassMat;
+          } else if (name.includes('DarkMahoganyWood')) {
+            child.material = mahoganyMat;
+          } else if (name.includes('EmeraldGlassShade')) {
+            child.material = emeraldShadeMat;
+            child.castShadow = false;
+          } else if (name.includes('WarmFilamentBulb')) {
+            child.material = bulbMat;
+            child.castShadow = false;
+          } else if (name.includes('CrimsonVelvetRope')) {
+            child.material = velvetRopeMat;
+          } else if (name.includes('CrystalDecanterGlass')) {
+            child.material = crystalMat;
+          } else if (name.includes('AmberWhiskeyGlass')) {
+            child.material = whiskeyMat;
+          }
+
+          if (isOuterSalonProp) {
+            outerSalonMeshes.push(child);
+          }
+        });
+
+        // Move outer architectural Salon props into salonRoomGroup so AR passthrough can toggle them with the room
+        if (this.salonRoomGroup) {
+          for (const propMesh of outerSalonMeshes) {
+            this.salonRoomGroup.attach(propMesh);
+          }
+        }
+
+        tableRoot.remove(fallbackGroup);
+        tableRoot.add(modelRoot);
+      },
+      undefined,
+      () => {
+        // Keep synchronous fallbackGroup if GLB fails to load
+      }
+    );
   }
 
   private buildDealerAndButton() {
@@ -571,70 +865,82 @@ export class CasinoScene {
     // Positioned at z = -1.14 so the croupier torso (radius 0.20m) sits cleanly behind the -0.904m leather armrest
     dealerGroup.position.set(0, 0.75, -1.14);
 
-    // Formal Croupier Satin Vest & Crisp White Collar + Gold Bowtie
-    const vestMat = new THREE.MeshStandardMaterial({
+    // Formal Croupier Satin Vest & Crisp White Collar + Gold Bowtie with woven cloth normal map & sheen
+    const suitFabricNor = this.textureLoader.load('/assets/pbr/fabric_nor_1k.jpg');
+    suitFabricNor.wrapS = THREE.RepeatWrapping;
+    suitFabricNor.wrapT = THREE.RepeatWrapping;
+    suitFabricNor.repeat.set(6, 6);
+
+    const vestMat = new THREE.MeshPhysicalMaterial({
       color: '#0f172a',
-      roughness: 0.45,
-      metalness: 0.2,
+      normalMap: suitFabricNor,
+      normalScale: new THREE.Vector2(0.26, 0.26),
+      roughness: 0.48,
+      metalness: 0.14,
+      sheen: 0.55,
+      sheenRoughness: 0.42,
+      sheenColor: new THREE.Color('#334155'),
+      clearcoat: 0.08,
+      envMapIntensity: 0.65,
     });
-    const shirtMat = new THREE.MeshStandardMaterial({
+    const shirtMat = new THREE.MeshPhysicalMaterial({
       color: '#f8fafc',
-      roughness: 0.5,
+      normalMap: suitFabricNor,
+      normalScale: new THREE.Vector2(0.18, 0.18),
+      roughness: 0.56,
+      sheen: 0.35,
+      sheenColor: new THREE.Color('#ffffff'),
+      envMapIntensity: 0.5,
     });
     const goldMat = new THREE.MeshStandardMaterial({
       color: '#facc15',
       metalness: 0.85,
       roughness: 0.2,
     });
-    const skinMat = new THREE.MeshStandardMaterial({
-      color: '#f1d5be',
-      roughness: 0.45,
-    });
+    const skinMat = createRealisticSkinMaterial('#f1d5be');
 
-    const torsoGeo = new THREE.CapsuleGeometry(0.148, 0.24, 18, 32);
+    const dealerTorsoGroup = new THREE.Group();
+    dealerTorsoGroup.name = 'DealerTorsoSlot';
+    const torsoGeo = new THREE.CapsuleGeometry(0.148, 0.24, 16, 24);
     const torso = new THREE.Mesh(torsoGeo, vestMat);
     torso.position.y = 0.21;
     torso.scale.set(1.06, 1.0, 0.88);
-    dealerGroup.add(torso);
+    torso.castShadow = true;
+    dealerTorsoGroup.add(torso);
 
     // Articulated 3D Sculpted Dealer Head (hair, eyes, eyebrows, nose, beard, smile, bow tie)
     const headGroup = new THREE.Group();
     headGroup.position.set(0, 0.61, 0);
-    const headGeo = new THREE.SphereGeometry(0.102, 36, 36);
+    const headGeo = new THREE.SphereGeometry(0.102, 28, 28);
     const headMesh = new THREE.Mesh(headGeo, skinMat);
+    headMesh.castShadow = true;
     headGroup.add(headMesh);
 
-    populate3DCharacterHeadAndTorso('dealer', dealerGroup, headGroup, skinMat, vestMat, goldMat);
+    populate3DCharacterHeadAndTorso('dealer', dealerTorsoGroup, headGroup, skinMat, vestMat, goldMat);
 
+    dealerGroup.add(dealerTorsoGroup);
     dealerGroup.add(headGroup);
     this.dealerGroup = dealerGroup;
     this.dealerHeadGroup = headGroup;
 
-    // Articulated Left & Right Capsule Arms for Riffle Shuffle, Card Pitching, Burn Tap, and Pot Sweeps
-    const armGeo = new THREE.CapsuleGeometry(0.033, 0.22, 14, 20);
-    const handGeo = new THREE.SphereGeometry(0.034, 18, 18);
-
+    // Articulated Left & Right Forearms + 5-Finger Hands for Riffle Shuffle, Card Pitching, Burn Tap, and Pot Sweeps
     const leftArm = new THREE.Group();
     leftArm.position.set(-0.175, 0.39, -0.01);
-    const lSleeve = new THREE.Mesh(armGeo, shirtMat);
-    lSleeve.position.set(0.0, -0.11, 0.025);
-    lSleeve.rotation.x = 0.22;
-    lSleeve.rotation.z = -0.08;
-    const lHand = new THREE.Mesh(handGeo, skinMat);
-    lHand.position.set(0.02, -0.22, 0.08);
-    leftArm.add(lSleeve, lHand);
+    const lHandRig = buildArticulatedForearmAndHand(skinMat, shirtMat, 'left', 'dealer', goldMat);
+    lHandRig.position.set(0.02, -0.20, 0.08);
+    lHandRig.rotation.set(0.12, 0.18, 0);
+    leftArm.add(lHandRig);
+    leftArm.userData.handRig = lHandRig;
     dealerGroup.add(leftArm);
     this.dealerLeftArm = leftArm;
 
     const rightArm = new THREE.Group();
     rightArm.position.set(0.175, 0.39, -0.01);
-    const rSleeve = new THREE.Mesh(armGeo, shirtMat);
-    rSleeve.position.set(0.0, -0.11, 0.025);
-    rSleeve.rotation.x = 0.22;
-    rSleeve.rotation.z = 0.08;
-    const rHand = new THREE.Mesh(handGeo, skinMat);
-    rHand.position.set(-0.02, -0.22, 0.08);
-    rightArm.add(rSleeve, rHand);
+    const rHandRig = buildArticulatedForearmAndHand(skinMat, shirtMat, 'right', 'dealer', goldMat);
+    rHandRig.position.set(-0.02, -0.20, 0.08);
+    rHandRig.rotation.set(0.12, -0.18, 0);
+    rightArm.add(rHandRig);
+    rightArm.userData.handRig = rHandRig;
     dealerGroup.add(rightArm);
     this.dealerRightArm = rightArm;
 
@@ -643,15 +949,24 @@ export class CasinoScene {
     const shoeMesh = new THREE.Mesh(shoeGeo, goldMat);
     shoeMesh.position.set(0.24, 0.06, 0.28);
     shoeMesh.rotation.y = -0.35;
-    dealerGroup.add(shoeMesh);
+    dealerTorsoGroup.add(shoeMesh);
 
     this.scene.add(dealerGroup);
+
+    // Dedicated VIP Dealer Studio Key/Fill Light (illuminates sculpted facial features, hazel irises, 18K gold jewelry & satin peak lapels)
+    const dealerStudioLight = new THREE.PointLight('#fff4e6', 1.45, 1.75, 1.6);
+    dealerStudioLight.position.set(0.05, 0.70, 0.44);
+    dealerStudioLight.castShadow = false;
+    dealerGroup.add(dealerStudioLight);
+
+    // Keep the articulated 3D Dealer rig (subsurface PBR skin, cornea clearcoat eyes,
+    // eyelid blink + iris saccade rig, and 5-finger hands) active without overwriting with static GLB.
 
     // Movable Ceramic Dealer Button on the Felt
     const btnGeo = new THREE.CylinderGeometry(0.032, 0.032, 0.008, 24);
     const btnMat = new THREE.MeshStandardMaterial({
-      color: '#facc15',
-      metalness: 0.6,
+      color: '#d4af37',
+      metalness: 0.65,
       roughness: 0.25,
     });
     this.dealerButtonMesh = new THREE.Mesh(btnGeo, btnMat);
@@ -662,7 +977,7 @@ export class CasinoScene {
 
   /**
    * Builds persistent articulated 3D AI avatars (Viktor, Elena, Bao, Marcus)
-   * with full 3D sculpted heads, hair, eyewear, tailored clothing, table rim props, and floating plaques
+   * with full 3D sculpted heads, subsurface skin, cornea clearcoat eyes, 5-finger hands, and rail plaques
    */
   private initPersistentAvatars() {
     const personaConfigs: Array<{
@@ -678,7 +993,7 @@ export class CasinoScene {
         // Seat 1: Viktor (General Man / Shark) — Tailored dark navy suit, luxury watch, whiskey glass
         role: 'viktor',
         suitColor: '#1e293b',
-        accentColor: '#ef4444',
+        accentColor: '#d4af37',
         skinColor: '#eab696',
         torsoScale: new THREE.Vector3(1.02, 1.0, 0.96),
         portraitUrl: '/assets/avatar_viktor.png',
@@ -687,7 +1002,7 @@ export class CasinoScene {
         // Seat 2: Elena (Woman / Rock) — Burgundy evening gown, styled dark updo, champagne flute & card protector
         role: 'elena',
         suitColor: '#7f1d1d',
-        accentColor: '#8b5cf6',
+        accentColor: '#d4af37',
         skinColor: '#f3cfb6',
         torsoScale: new THREE.Vector3(0.86, 0.98, 0.82),
         portraitUrl: '/assets/avatar_elena.png',
@@ -696,7 +1011,7 @@ export class CasinoScene {
         // Seat 3: Bao (Heavy Phone-Watcher / Calling Station) — Heavy build, glowing 3D phone, soda can
         role: 'bao',
         suitColor: '#064e3b',
-        accentColor: '#10b981',
+        accentColor: '#d4af37',
         skinColor: '#e5b887',
         torsoScale: new THREE.Vector3(1.38, 1.06, 1.32),
         portraitUrl: '/assets/avatar_bao.png',
@@ -705,7 +1020,7 @@ export class CasinoScene {
         // Seat 4: Marcus (Flashy Maniac) — Gold/burgundy blazer, aviator sunglasses, espresso cup
         role: 'marcus',
         suitColor: '#78350f',
-        accentColor: '#f59e0b',
+        accentColor: '#d4af37',
         skinColor: '#d99b66',
         torsoScale: new THREE.Vector3(1.06, 1.02, 0.98),
         portraitUrl: '/assets/avatar_marcus.png',
@@ -713,10 +1028,34 @@ export class CasinoScene {
     ];
 
     const goldMat = new THREE.MeshStandardMaterial({
-      color: '#facc15',
+      color: '#d4af37',
       metalness: 0.9,
       roughness: 0.2,
     });
+
+    const suitFabricNor = this.textureLoader.load('/assets/pbr/fabric_nor_1k.jpg');
+    suitFabricNor.wrapS = THREE.RepeatWrapping;
+    suitFabricNor.wrapT = THREE.RepeatWrapping;
+    suitFabricNor.repeat.set(6, 6);
+
+    const avatarMeshSlots: Map<
+      number,
+      {
+        rolePrefix: string;
+        torsoMeshSlot: THREE.Group;
+        headMeshSlot: THREE.Group;
+        leftArmMeshSlot: THREE.Group;
+        rightArmMeshSlot: THREE.Group;
+      }
+    > = new Map();
+
+    const rolePrefixMap: Record<CharacterModelRole, string> = {
+      dealer: 'Dealer',
+      viktor: 'Viktor',
+      elena: 'Elena',
+      bao: 'Bao',
+      marcus: 'Marcus',
+    };
 
     for (let seatIdx = 1; seatIdx <= 4; seatIdx++) {
       const cfg = personaConfigs[seatIdx]!;
@@ -724,78 +1063,89 @@ export class CasinoScene {
       const avatarGroup = new THREE.Group();
       avatarGroup.position.copy(rimPos);
       avatarGroup.lookAt(0, 0.8, 0);
+      avatarGroup.updateMatrixWorld(true);
 
       // Articulated Torso Group (leans forward on monster-hand tells or action)
       const torsoGroup = new THREE.Group();
       avatarGroup.add(torsoGroup);
 
-      const bodyGeo = new THREE.CapsuleGeometry(0.128, 0.22, 18, 32);
-      const bodyMat = new THREE.MeshStandardMaterial({
+      const torsoMeshSlot = new THREE.Group();
+      torsoMeshSlot.name = `${rolePrefixMap[cfg.role]}_TorsoSlot`;
+      torsoGroup.add(torsoMeshSlot);
+
+      const bodyGeo = new THREE.CapsuleGeometry(0.128, 0.22, 16, 24);
+      const bodyMat = new THREE.MeshPhysicalMaterial({
         color: cfg.suitColor,
-        roughness: 0.48,
-        metalness: 0.14,
+        normalMap: suitFabricNor,
+        normalScale: new THREE.Vector2(0.26, 0.26),
+        roughness: 0.50,
+        metalness: 0.12,
+        sheen: 0.55,
+        sheenRoughness: 0.44,
+        sheenColor: new THREE.Color(cfg.suitColor).lerp(new THREE.Color('#ffffff'), 0.28),
+        clearcoat: 0.08,
+        envMapIntensity: 0.65,
       });
       const body = new THREE.Mesh(bodyGeo, bodyMat);
       body.position.y = 0.18;
       body.scale.copy(cfg.torsoScale);
-      torsoGroup.add(body);
+      body.castShadow = true;
+      torsoMeshSlot.add(body);
 
       // Articulated 3D Sculpted Head Group (tracks active player or tilts down toward phone for Seat #3)
       const headGroup = new THREE.Group();
       headGroup.position.set(0, 0.54, 0);
-      const headGeo = new THREE.SphereGeometry(seatIdx === 3 ? 0.106 : 0.095, 36, 36);
-      const skinMat = new THREE.MeshStandardMaterial({
-        color: cfg.skinColor,
-        roughness: 0.4,
-      });
-      const head = new THREE.Mesh(headGeo, skinMat);
-      headGroup.add(head);
+      const headMeshSlot = new THREE.Group();
+      headMeshSlot.name = `${rolePrefixMap[cfg.role]}_HeadSlot`;
+      headGroup.add(headMeshSlot);
 
-      // Populate full 3D facial features, hair, eyewear, jewelry, collar, tie, and lapels
-      populate3DCharacterHeadAndTorso(cfg.role, torsoGroup, headGroup, skinMat, bodyMat, goldMat);
+      const headGeo = new THREE.SphereGeometry(seatIdx === 3 ? 0.106 : 0.095, 28, 28);
+      const skinMat = createRealisticSkinMaterial(cfg.skinColor);
+      const head = new THREE.Mesh(headGeo, skinMat);
+      head.castShadow = true;
+      headMeshSlot.add(head);
+
+      // Populate full 3D facial anatomy, eyelids, gaze-tracking irises, hair, eyewear, jewelry, collar, tie, and lapels
+      populate3DCharacterHeadAndTorso(cfg.role, torsoMeshSlot, headMeshSlot, skinMat, bodyMat, goldMat);
+      Object.assign(headGroup.userData, headMeshSlot.userData);
 
       torsoGroup.add(headGroup);
 
-      // Articulated Left & Right Capsule Arms (pivots anchored at shoulder height y = 0.40)
-      const armGeo = new THREE.CapsuleGeometry(
-        seatIdx === 3 ? 0.042 : 0.032,
-        0.2,
-        14,
-        20
-      );
-      const handGeo = new THREE.SphereGeometry(seatIdx === 3 ? 0.038 : 0.031, 18, 18);
-
+      // Articulated Left & Right Forearms + 5-Finger Sculpted Hands (pivots anchored at shoulder height y = 0.36)
       const shoulderX = seatIdx === 3 ? 0.195 : seatIdx === 2 ? 0.132 : 0.155;
       const leftArmGroup = new THREE.Group();
       leftArmGroup.position.set(-shoulderX, 0.36, -0.01);
-      const lArmMesh = new THREE.Mesh(armGeo, bodyMat);
-      lArmMesh.position.set(0.0, -0.10, 0.02);
-      lArmMesh.rotation.x = 0.22;
-      lArmMesh.rotation.z = -0.06;
-      const lHandMesh = new THREE.Mesh(handGeo, skinMat);
-      lHandMesh.position.set(0.02, -0.20, 0.07);
-      leftArmGroup.add(lArmMesh, lHandMesh);
+      const leftArmMeshSlot = new THREE.Group();
+      leftArmMeshSlot.name = `${rolePrefixMap[cfg.role]}_LeftArmSlot`;
+      leftArmGroup.add(leftArmMeshSlot);
 
-      if (seatIdx === 1) {
-        // Viktor's luxury gold wristwatch on left wrist
-        const watchGeo = new THREE.CylinderGeometry(0.032, 0.032, 0.016, 16);
-        const watch = new THREE.Mesh(watchGeo, goldMat);
-        watch.position.set(0.015, -0.16, 0.055);
-        watch.rotation.x = 0.22;
-        leftArmGroup.add(watch);
-      }
+      const lHandRig = buildArticulatedForearmAndHand(skinMat, bodyMat, 'left', cfg.role, goldMat);
+      lHandRig.position.set(0.02, -0.19, 0.07);
+      lHandRig.rotation.set(0.12, 0.16, 0);
+      leftArmMeshSlot.add(lHandRig);
+      leftArmGroup.userData.handRig = lHandRig;
       torsoGroup.add(leftArmGroup);
 
       const rightArmGroup = new THREE.Group();
       rightArmGroup.position.set(shoulderX, 0.36, -0.01);
-      const rArmMesh = new THREE.Mesh(armGeo, bodyMat);
-      rArmMesh.position.set(0.0, -0.10, 0.02);
-      rArmMesh.rotation.x = 0.22;
-      rArmMesh.rotation.z = 0.06;
-      const rHandMesh = new THREE.Mesh(handGeo, skinMat);
-      rHandMesh.position.set(-0.02, -0.20, 0.07);
-      rightArmGroup.add(rArmMesh, rHandMesh);
+      const rightArmMeshSlot = new THREE.Group();
+      rightArmMeshSlot.name = `${rolePrefixMap[cfg.role]}_RightArmSlot`;
+      rightArmGroup.add(rightArmMeshSlot);
+
+      const rHandRig = buildArticulatedForearmAndHand(skinMat, bodyMat, 'right', cfg.role, goldMat);
+      rHandRig.position.set(-0.02, -0.19, 0.07);
+      rHandRig.rotation.set(0.12, -0.16, 0);
+      rightArmMeshSlot.add(rHandRig);
+      rightArmGroup.userData.handRig = rHandRig;
       torsoGroup.add(rightArmGroup);
+
+      avatarMeshSlots.set(seatIdx, {
+        rolePrefix: rolePrefixMap[cfg.role],
+        torsoMeshSlot,
+        headMeshSlot,
+        leftArmMeshSlot,
+        rightArmMeshSlot,
+      });
 
       // Seat #3 (Bao) Special 3D Glowing Smartphone + Face Screen Glow Light + Resting Rail Phone
       let phoneHandGroup: THREE.Group | undefined;
@@ -837,29 +1187,30 @@ export class CasinoScene {
         phoneGlowLight.position.set(0, 0.42, 0.26);
         torsoGroup.add(phoneGlowLight);
 
-        // Phone placed flat on the mahogany rail when Bao gets a monster hand ("phone_down_monster" tell!)
+        // Phone placed flat on the walnut racetrack when Bao gets a monster hand ("phone_down_monster" tell!)
         const railPhoneMat = new THREE.MeshStandardMaterial({
           color: '#0f172a',
           metalness: 0.85,
           roughness: 0.18,
-          emissive: '#f59e0b',
+          emissive: '#d4af37',
           emissiveIntensity: 0.35,
         });
         phoneRailMesh = new THREE.Mesh(caseGeo, railPhoneMat);
-        phoneRailMesh.position.set(0.16, 0.062, 0.27);
+        const railPhoneLocal = avatarGroup.worldToLocal(new THREE.Vector3(0.92, 0.768, -0.51));
+        phoneRailMesh.position.copy(railPhoneLocal);
         phoneRailMesh.rotation.x = Math.PI / 2;
         phoneRailMesh.visible = false;
         avatarGroup.add(phoneRailMesh);
       }
 
-      // Seat-Specific Table Rim Props (Whiskey Glass, Champagne Flute & Card Protector, Soda Can, Espresso Cup)
+      // Seat-Specific Table Rim Props snapped directly into the 4 recessed brushed-brass cup holders on the walnut racetrack
       this.buildSeatRimProps(seatIdx, avatarGroup, goldMat);
 
       // Turn Floor Ring
-      const ringGeo = new THREE.RingGeometry(0.19, 0.23, 28);
+      const ringGeo = new THREE.RingGeometry(0.19, 0.23, 24);
       ringGeo.rotateX(-Math.PI / 2);
       const ringMat = new THREE.MeshBasicMaterial({
-        color: '#eab308',
+        color: '#d4af37',
         transparent: true,
         opacity: 0.15,
       });
@@ -867,21 +1218,22 @@ export class CasinoScene {
       ring.position.y = 0.01;
       avatarGroup.add(ring);
 
-      // 3D Floating Status & Action Speech Plaque above Avatar
+      // 3D Status & Action Plaque docked low on the front rail (y = 0.16m, z = 0.25m)
+      // so it NEVER occludes the 3D character's face (y = 0.54m), torso, or racetrack drink props!
       const plaqueCanvas = document.createElement('canvas');
       plaqueCanvas.width = 460;
       plaqueCanvas.height = 132;
       const plaqueTexture = new THREE.CanvasTexture(plaqueCanvas);
       plaqueTexture.anisotropy = 4;
 
-      const plaqueGeo = new THREE.PlaneGeometry(0.48, 0.14);
+      const plaqueGeo = new THREE.PlaneGeometry(0.38, 0.11);
       const plaqueMat = new THREE.MeshBasicMaterial({
         map: plaqueTexture,
         transparent: true,
         side: THREE.DoubleSide,
       });
       const plaqueMesh = new THREE.Mesh(plaqueGeo, plaqueMat);
-      plaqueMesh.position.set(0, 0.76, 0.08);
+      plaqueMesh.position.set(0, 0.16, 0.25);
       avatarGroup.add(plaqueMesh);
 
       // Preload 2D Nano Banana character portrait for the 3D Plaque medallion
@@ -920,10 +1272,19 @@ export class CasinoScene {
       this.scene.add(avatarGroup);
       this.avatarPlaques.set(seatIdx, plaqueRefObj);
     }
+
+    // Add subtle warm facial key lights for each AI seat so subsurface skin sheen and cornea catchlights read clearly
+    this.avatarPlaques.forEach((plaqueRef) => {
+      const seatKeyLight = new THREE.PointLight('#fff4e6', 0.85, 1.35, 1.6);
+      seatKeyLight.position.set(0.04, 0.64, 0.36);
+      seatKeyLight.castShadow = false;
+      plaqueRef.avatarGroup.add(seatKeyLight);
+    });
   }
 
   /**
-   * Builds signature character props on the mahogany table rim for each AI seat
+   * Builds signature character props seated directly inside the recessed brushed-brass cup holders
+   * on the flat walnut racetrack (`y_world = 0.7670m`) for each AI seat
    */
   private buildSeatRimProps(
     seatIdx: number,
@@ -931,19 +1292,28 @@ export class CasinoScene {
     goldMat: THREE.MeshStandardMaterial
   ) {
     const glassMat = new THREE.MeshPhysicalMaterial({
-      color: '#ffffff',
+      color: '#e2e8f0',
       transparent: true,
-      opacity: 0.45,
-      roughness: 0.1,
-      transmission: 0.6,
+      opacity: 0.48,
+      roughness: 0.08,
+      metalness: 0.16,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.05,
+      envMapIntensity: 1.4,
     });
 
+    // Counter-rotate prop groups against avatarGroup's slight lookAt pitch so glasses/cans stand 100% upright
+    const uprightQuat = avatarGroup.quaternion.clone().invert();
+
     if (seatIdx === 1) {
-      // Viktor: Crystal Old Fashioned Whiskey Tumbler with Amber Single Malt
+      // Viktor: Crystal Old Fashioned Whiskey Tumbler seated inside Seat #1 Brass Cup Holder (-1.1839, 0.7670, 0.0337)
       const tumblerGroup = new THREE.Group();
-      tumblerGroup.position.set(-0.22, 0.068, 0.25);
-      const glassGeo = new THREE.CylinderGeometry(0.032, 0.028, 0.068, 16);
-      const liquidGeo = new THREE.CylinderGeometry(0.028, 0.025, 0.036, 14);
+      tumblerGroup.position.copy(
+        avatarGroup.worldToLocal(new THREE.Vector3(-1.1839, 0.799, 0.0337))
+      );
+      tumblerGroup.quaternion.copy(uprightQuat);
+      const glassGeo = new THREE.CylinderGeometry(0.031, 0.027, 0.068, 16);
+      const liquidGeo = new THREE.CylinderGeometry(0.027, 0.024, 0.036, 14);
       const amberMat = new THREE.MeshStandardMaterial({
         color: '#d97706',
         roughness: 0.2,
@@ -955,9 +1325,12 @@ export class CasinoScene {
       tumblerGroup.add(glass, liquid);
       avatarGroup.add(tumblerGroup);
     } else if (seatIdx === 2) {
-      // Elena: Tall Champagne Flute + Gold Lucky Card Protector on the Felt
+      // Elena: Tall Champagne Flute seated inside Seat #2 Brass Cup Holder (-0.7668, 0.7670, -0.5969) + Gold Card Protector on Felt
       const fluteGroup = new THREE.Group();
-      fluteGroup.position.set(-0.21, 0.082, 0.25);
+      fluteGroup.position.copy(
+        avatarGroup.worldToLocal(new THREE.Vector3(-0.7668, 0.806, -0.5969))
+      );
+      fluteGroup.quaternion.copy(uprightQuat);
       const bowlGeo = new THREE.CylinderGeometry(0.022, 0.008, 0.085, 14);
       const bowl = new THREE.Mesh(bowlGeo, glassMat);
       fluteGroup.add(bowl);
@@ -965,61 +1338,82 @@ export class CasinoScene {
 
       const protectorGeo = new THREE.CylinderGeometry(0.024, 0.024, 0.006, 20);
       const protector = new THREE.Mesh(protectorGeo, goldMat);
-      protector.position.set(0.12, 0.024, 0.36);
+      protector.position.copy(
+        avatarGroup.worldToLocal(new THREE.Vector3(-0.62, 0.765, -0.42))
+      );
+      protector.quaternion.copy(uprightQuat);
       avatarGroup.add(protector);
     } else if (seatIdx === 3) {
-      // Bao: Neon Green/Cyan Energy Drink / Soda Can on the Rim
-      const canGeo = new THREE.CylinderGeometry(0.028, 0.028, 0.095, 16);
+      // Bao: Energy Drink Can seated inside Seat #3 Brass Cup Holder (1.1144, 0.7670, -0.2667)
+      const canGeo = new THREE.CylinderGeometry(0.027, 0.027, 0.092, 16);
       const canMat = new THREE.MeshStandardMaterial({
         color: '#10b981',
         metalness: 0.75,
         roughness: 0.25,
       });
       const canMesh = new THREE.Mesh(canGeo, canMat);
-      canMesh.position.set(-0.23, 0.075, 0.25);
+      canMesh.position.copy(
+        avatarGroup.worldToLocal(new THREE.Vector3(1.1144, 0.811, -0.2667))
+      );
+      canMesh.quaternion.copy(uprightQuat);
       avatarGroup.add(canMesh);
     } else if (seatIdx === 4) {
-      // Marcus: Double Espresso Cup on White Porcelain Saucer
-      const saucerGeo = new THREE.CylinderGeometry(0.042, 0.032, 0.008, 16);
-      const cupGeo = new THREE.CylinderGeometry(0.025, 0.019, 0.042, 16);
+      // Marcus: Double Espresso Cup & Porcelain Saucer seated on Seat #4 Brass Cup Holder (1.0015, 0.7670, 0.4174)
+      const espressoGroup = new THREE.Group();
+      espressoGroup.position.copy(
+        avatarGroup.worldToLocal(new THREE.Vector3(1.0015, 0.768, 0.4174))
+      );
+      espressoGroup.quaternion.copy(uprightQuat);
+
+      const saucerGeo = new THREE.CylinderGeometry(0.04, 0.03, 0.007, 16);
+      const cupGeo = new THREE.CylinderGeometry(0.024, 0.018, 0.04, 16);
       const porcelainMat = new THREE.MeshStandardMaterial({
-        color: '#f8fafc',
-        roughness: 0.2,
+        color: '#f1f5f9',
+        roughness: 0.28,
       });
       const saucer = new THREE.Mesh(saucerGeo, porcelainMat);
-      saucer.position.set(-0.22, 0.048, 0.25);
+      saucer.position.y = 0.0035;
       const cup = new THREE.Mesh(cupGeo, porcelainMat);
-      cup.position.set(-0.22, 0.072, 0.25);
-      avatarGroup.add(saucer, cup);
+      cup.position.y = 0.024;
+      espressoGroup.add(saucer, cup);
+      avatarGroup.add(espressoGroup);
     }
   }
 
   /**
-   * Initializes 4 InstancedMesh pools for $1, $5, $25, $100 chips
+   * Initializes 4 InstancedMesh pools for $1, $5, $25, $100 chips using sculpted compression-molded
+   * clay geometry (chamfered stack edges, 12 radial mold notches, recessed center inlay well) and MeshPhysicalMaterial
    */
   private initInstancedChips() {
     const denoms: ChipDenomination[] = [1, 5, 25, 100];
     const radius = 0.022;
     const height = 0.0045;
     const maxInstancesPerDenom = 240;
+    const sculptedChipGeo = createSculptedClayChipGeometry(radius, height, 36);
 
     for (const denom of denoms) {
       const textures = getChipTextures(denom);
-      const geometry = new THREE.CylinderGeometry(radius, radius, height, 28);
-      const sideMat = new THREE.MeshStandardMaterial({
+      const sideMat = new THREE.MeshPhysicalMaterial({
         map: textures.edge,
-        roughness: 0.45,
-        metalness: 0.1,
+        roughness: 0.62,
+        metalness: 0.06,
+        clearcoat: 0.15,
+        clearcoatRoughness: 0.45,
       });
-      const faceMat = new THREE.MeshStandardMaterial({
+      const faceMat = new THREE.MeshPhysicalMaterial({
         map: textures.face,
-        roughness: 0.4,
-        metalness: 0.12,
+        normalMap: textures.normalMap,
+        normalScale: new THREE.Vector2(0.38, 0.38),
+        roughnessMap: textures.roughnessMap,
+        roughness: 0.72,
+        metalness: denom === 100 ? 0.22 : 0.1,
+        clearcoat: 0.85,
+        clearcoatRoughness: 0.16,
       });
 
       const instanced = new THREE.InstancedMesh(
-        geometry,
-        [sideMat, faceMat, faceMat],
+        sculptedChipGeo,
+        [sideMat, faceMat],
         maxInstancesPerDenom
       );
       instanced.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -1032,17 +1426,30 @@ export class CasinoScene {
       this.chipInstancedMeshes.set(denom, instanced);
     }
 
+    // Load Blender 5.2 sculpted chip & card prototype asset (/models/vip_cards_and_chips.glb) for hybrid pipeline parity
+    this.gltfLoader.load(
+      '/models/vip_cards_and_chips.glb',
+      (gltf) => {
+        gltf.scene.name = 'BlenderCardsAndChipsPrototypes';
+      },
+      undefined,
+      () => {
+        // Synchronous sculpted geometry remains active if offline
+      }
+    );
+
     // Visual dragged chip stack preview when user pinches/drags chips
     this.draggedChipGroup = new THREE.Group();
-    const dragGeo = new THREE.CylinderGeometry(radius * 1.05, radius * 1.05, height * 3, 24);
-    const dragMat = new THREE.MeshStandardMaterial({
+    const dragGeo = createSculptedClayChipGeometry(radius * 1.04, height * 3, 32);
+    const dragMat = new THREE.MeshPhysicalMaterial({
       color: '#facc15',
-      metalness: 0.6,
-      roughness: 0.25,
+      metalness: 0.65,
+      roughness: 0.22,
+      clearcoat: 0.85,
       emissive: '#d4af37',
       emissiveIntensity: 0.35,
     });
-    const dragMesh = new THREE.Mesh(dragGeo, dragMat);
+    const dragMesh = new THREE.Mesh(dragGeo, [dragMat, dragMat]);
     this.draggedChipGroup.add(dragMesh);
     this.draggedChipGroup.visible = false;
     this.scene.add(this.draggedChipGroup);
@@ -1086,7 +1493,7 @@ export class CasinoScene {
     denoms.forEach((denom, idx) => {
       const hitMesh = new THREE.Mesh(hitGeo, invisibleMat);
       const xOffset = (idx - 1.5) * 0.068;
-      hitMesh.position.set(xOffset, 0.79, 0.76);
+      hitMesh.position.set(xOffset, 0.79, 0.71);
       hitMesh.userData = { type: 'bank_chip', denom };
       this.scene.add(hitMesh);
       this.bankChipHitMeshes.push(hitMesh);
@@ -1101,25 +1508,25 @@ export class CasinoScene {
       side: THREE.DoubleSide,
     });
     this.bankChipHoverRing = new THREE.Mesh(hoverRingGeo, hoverRingMat);
-    this.bankChipHoverRing.position.set(0, 0.764, 0.76);
+    this.bankChipHoverRing.position.set(0, 0.764, 0.71);
     this.bankChipHoverRing.visible = false;
     this.scene.add(this.bankChipHoverRing);
 
     // 4. Invisible Raycast Collider for Seat #0's Hole Cards (for pinch-peeking and flick-to-fold)
     const cardHitGeo = new THREE.BoxGeometry(0.22, 0.04, 0.15);
     this.holeCardHitMesh = new THREE.Mesh(cardHitGeo, invisibleMat);
-    this.holeCardHitMesh.position.set(0, 0.77, 0.68);
+    this.holeCardHitMesh.position.set(0, 0.77, 0.62);
     this.holeCardHitMesh.userData = { type: 'hole_cards' };
     this.scene.add(this.holeCardHitMesh);
 
-    // 5. World-Anchored 3D Spatial HUD Dock mounted above Seat #0 Table Rim (elevated at y=0.835 to avoid armrest clipping)
+    // 5. World-Anchored 3D Spatial HUD Dock mounted above Seat #0 Table Rim (elevated at y=0.835, z=0.85 for 100% frustum containment)
     const buttonIds: ('fold' | 'call' | 'raise' | 'peek_or_next')[] = [
       'fold',
       'call',
       'raise',
       'peek_or_next',
     ];
-    const btnGeo = new THREE.PlaneGeometry(0.17, 0.068);
+    const btnGeo = new THREE.PlaneGeometry(0.165, 0.066);
 
     buttonIds.forEach((id, idx) => {
       const canvas = document.createElement('canvas');
@@ -1133,9 +1540,10 @@ export class CasinoScene {
         transparent: true,
       });
       const mesh = new THREE.Mesh(btnGeo, mat);
-      const xPos = (idx - 1.5) * 0.185;
-      mesh.position.set(xPos, 0.835, 0.90);
+      const xPos = (idx - 1.5) * 0.18;
+      mesh.position.set(xPos, 0.835, 0.85);
       mesh.rotation.x = -0.64; // Angled ergonomically toward Seat #0 eyes above the leather armrest
+      mesh.visible = !this.show2DHUD || this.isInXR;
       mesh.userData = { type: 'spatial_button', buttonId: id };
 
       this.scene.add(mesh);
@@ -1163,7 +1571,7 @@ export class CasinoScene {
       const mesh = new THREE.Mesh(badgeGeo, mat);
       // Place slightly inward of the street bet chip stack, tilted gently upward for legibility
       const badgeX = seatIdx === 0 ? 0.16 : seatPos.x * 0.56;
-      const badgeZ = seatIdx === 0 ? 0.46 : seatPos.z * 0.56 + 0.05;
+      const badgeZ = seatIdx === 0 ? 0.44 : seatPos.z * 0.56 + 0.05;
       mesh.position.set(badgeX, 0.774, badgeZ);
       mesh.rotation.x = -Math.PI / 2.6;
       mesh.visible = false;
@@ -1313,6 +1721,25 @@ export class CasinoScene {
       this.dealerButtonTarget.set(dPos.x * 0.78 + 0.11, 0.766, dPos.z * 0.78);
     }
 
+    const activeSeats = players
+      .filter((p) => !p.eliminated)
+      .map((p) => p.seatIndex)
+      .sort((a, b) => a - b);
+
+    const getSeatPositionLabel = (seatIndex: number): string => {
+      if (activeSeats.length < 2 || !activeSeats.includes(seatIndex)) return '';
+      const dIdx = activeSeats.indexOf(dealerSeat);
+      const sIdx = activeSeats.indexOf(seatIndex);
+      if (dIdx === -1 || sIdx === -1) return '';
+      const rel = (sIdx - dIdx + activeSeats.length) % activeSeats.length;
+      if (activeSeats.length === 2) return rel === 0 ? 'BTN' : 'BB';
+      if (rel === 0) return 'BTN';
+      if (rel === 1) return 'SB';
+      if (rel === 2) return 'BB';
+      if (rel === activeSeats.length - 1) return 'CO';
+      return 'UTG';
+    };
+
     const now = Date.now();
 
     players.forEach((p) => {
@@ -1368,6 +1795,13 @@ export class CasinoScene {
           ? p.activeChatBubble
           : undefined;
 
+      const posLabel = getSeatPositionLabel(p.seatIndex);
+      const hs = p.hudStats;
+      const vpipPct = hs && hs.handsDealt > 0 ? Math.round(hs.vpipPct) : 28;
+      const pfrPct = hs && hs.handsDealt > 0 ? Math.round(hs.pfrPct) : 18;
+      const afVal = hs && hs.handsDealt > 0 ? hs.aggressionFactor.toFixed(1) : '1.8';
+      const hudStatsLabel = `VPIP ${vpipPct}% • PFR ${pfrPct}% • AF ${afVal}`;
+
       drawAvatarPlaque(
         plaqueRef.canvas,
         p.name,
@@ -1380,7 +1814,9 @@ export class CasinoScene {
         p.seatIndex === dealerSeat,
         tellLabel,
         chatBubbleText,
-        plaqueRef.portraitImg
+        plaqueRef.portraitImg,
+        posLabel,
+        hudStatsLabel
       );
       plaqueRef.texture.needsUpdate = true;
     });
@@ -1419,7 +1855,8 @@ export class CasinoScene {
   }
 
   /**
-   * Creates a 3D playing card mesh
+   * Creates a 3D playing card mesh with casino poker-rounded corners (3.5mm),
+   * subtle bridge camber (0.6mm arch), air-cushion linen normal map, and satin clearcoat
    */
   public createCardMesh(card: Card): { group: THREE.Group; frontMat: THREE.MeshStandardMaterial } {
     const cardGroup = new THREE.Group();
@@ -1429,31 +1866,43 @@ export class CasinoScene {
 
     const frontTexture = getCardFrontTexture(card);
     const backTexture = getCardBackTexture();
+    const linenNormal = getCardLinenNormalMap();
+    const backRoughness = getCardBackRoughnessMap();
 
-    const geometry = new THREE.BoxGeometry(width, thickness, height);
-    const edgeMaterial = new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.7 });
-    const topMaterial = new THREE.MeshStandardMaterial({
+    const geometry = createRoundedCamberedCardGeometry(width, height, thickness, 0.0035, 0.0006);
+    const edgeMaterial = new THREE.MeshStandardMaterial({
+      color: '#f8fafc',
+      roughness: 0.65,
+      metalness: 0.02,
+    });
+    const topMaterial = new THREE.MeshPhysicalMaterial({
+      color: '#ebe6dc',
       map: frontTexture,
-      roughness: 0.38,
-      metalness: 0.05,
+      normalMap: linenNormal,
+      normalScale: new THREE.Vector2(0.22, 0.22),
+      roughness: 0.72,
+      metalness: 0.0,
+      clearcoat: 0.14,
+      clearcoatRoughness: 0.58,
+      envMapIntensity: 0.22,
     });
-    const bottomMaterial = new THREE.MeshStandardMaterial({
+    const bottomMaterial = new THREE.MeshPhysicalMaterial({
       map: backTexture,
+      normalMap: linenNormal,
+      normalScale: new THREE.Vector2(0.18, 0.18),
+      roughnessMap: backRoughness,
       roughness: 0.42,
-      metalness: 0.08,
+      metalness: 0.18,
+      clearcoat: 0.68,
+      clearcoatRoughness: 0.22,
     });
 
-    const materials = [
-      edgeMaterial,
-      edgeMaterial,
-      topMaterial,
-      bottomMaterial,
-      edgeMaterial,
-      edgeMaterial,
-    ];
+    // createRoundedCamberedCardGeometry uses 3 material groups: [0: edge, 1: top (front), 2: bottom (back)]
+    const materials = [edgeMaterial, topMaterial, bottomMaterial];
 
     const mesh = new THREE.Mesh(geometry, materials);
-    mesh.castShadow = true;
+    // Flat 0.8mm cards rest on the felt; disabling shadow casting keeps draw calls well under the 450 budget
+    mesh.castShadow = false;
     mesh.receiveShadow = true;
     cardGroup.add(mesh);
 
@@ -1542,6 +1991,8 @@ export class CasinoScene {
             table.isAllInRunout ||
             (table.phase === 'showdown' && !player.folded));
         const faceRoll = shouldShowFace ? 0 : Math.PI;
+        // Subtle +/- 1.2 degree natural yaw variance on dealt hole cards
+        const cardYaw = ((player.seatIndex * 7 + cardIdx * 13) % 5 - 2) * 0.0105;
 
         if (!this.cardMeshes.has(card.id)) {
           const { group, frontMat } = this.createCardMesh(card);
@@ -1556,7 +2007,7 @@ export class CasinoScene {
             card,
             startPosition: startPos,
             targetPosition: targetPos,
-            targetRotation: new THREE.Euler(0, 0, faceRoll),
+            targetRotation: new THREE.Euler(0, cardYaw, faceRoll),
             isWinningCard: isWinner,
             spawnTime: now,
             arcHeight: 0.16,
@@ -1567,6 +2018,7 @@ export class CasinoScene {
           ref.card = card;
           ref.isWinningCard = isWinner;
           ref.targetPosition.copy(targetPos);
+          ref.targetRotation.y = cardYaw;
           ref.targetRotation.z = faceRoll;
           ref.frontMat.emissive.setHex(isWinner ? 0xd4af37 : 0x000000);
           ref.frontMat.emissiveIntensity = isWinner ? 0.32 : 0;
@@ -1618,7 +2070,7 @@ export class CasinoScene {
   public static getSeatBankPosition(seatIndex: number): THREE.Vector3 {
     switch (seatIndex) {
       case 0:
-        return new THREE.Vector3(0, 0.763, 0.76);
+        return new THREE.Vector3(0, 0.763, 0.71);
       case 1:
         return new THREE.Vector3(-0.88, 0.763, 0.44);
       case 2:
@@ -1628,13 +2080,14 @@ export class CasinoScene {
       case 4:
         return new THREE.Vector3(0.88, 0.763, 0.44);
       default:
-        return new THREE.Vector3(0, 0.763, 0.76);
+        return new THREE.Vector3(0, 0.763, 0.71);
     }
   }
 
   /**
-   * Rebuilds target positions for all InstancedMesh chips (organized in 5/10-chip vertical columns)
-   * with parabolic toss trajectories, animated pot sweeps on Showdown, and 3D on-felt street bet badges.
+   * Rebuilds target positions for all InstancedMesh chips (organized in 10-chip vertical columns)
+   * with flush beveled contact, hand-stacked micro-jitter, parabolic toss trajectories,
+   * animated pot sweeps on Showdown, and 3D on-felt street bet badges.
    */
   public syncChips(table: TableState, players: PlayerState[]) {
     this.latestTable = table;
@@ -1664,13 +2117,16 @@ export class CasinoScene {
         for (let i = 0; i < cappedCount; i++) {
           const col = colIndex + Math.floor(i / 10);
           const rowInCol = i % 10;
-          // Subtle 5-chip visual offset notch
-          const fiveGroupGap = rowInCol >= 5 ? 0.0012 : 0;
           const colOffsetX = (col - 1) * 0.05;
+          // Deterministic +/- 0.45mm X/Z hand-stacked micro-jitter (bottom chip stays anchored)
+          const seed = (opts?.seatIndex ?? 5) * 31 + denom * 7 + col * 13 + rowInCol;
+          const jitterX = rowInCol === 0 ? 0 : Math.sin(seed * 1.7) * 0.00045;
+          const jitterZ = rowInCol === 0 ? 0 : Math.cos(seed * 2.3) * 0.00045;
+          // Flush contact across 4.4mm beveled clay chips without artificial floating gaps
           const targetPos = new THREE.Vector3(
-            baseCenter.x + colOffsetX,
-            baseCenter.y + rowInCol * 0.0046 + fiveGroupGap,
-            baseCenter.z
+            baseCenter.x + colOffsetX + jitterX,
+            baseCenter.y + rowInCol * 0.00442,
+            baseCenter.z + jitterZ
           );
 
           const startPos = originPos ? originPos.clone() : targetPos.clone();
@@ -1679,7 +2135,7 @@ export class CasinoScene {
             currentPos: startPos.clone(),
             startPos,
             targetPos,
-            rotationY: (i * 0.7) % (Math.PI * 2),
+            rotationY: (i * 1.15 + col * 0.85) % (Math.PI * 2),
             spawnTime: originPos ? now : -10,
             arcHeight: originPos ? (opts?.arcHeight ?? 0.085) : 0,
             seatIndex: opts?.seatIndex,
@@ -1722,7 +2178,7 @@ export class CasinoScene {
       addStackColumns(
         CasinoScene.BETTING_RING_CENTER,
         table.stagedBet,
-        new THREE.Vector3(0, 0.78, 0.76),
+        new THREE.Vector3(0, 0.78, 0.71),
         { seatIndex: 0, arcHeight: 0.07 }
       );
     }
@@ -1738,7 +2194,7 @@ export class CasinoScene {
       const bankPos = CasinoScene.getSeatBankPosition(p.seatIndex);
 
       if (p.isHuman) {
-        // Seat #0 Bank: 4 neat denomination columns aligned with bankChipHitMeshes at z = 0.76
+        // Seat #0 Bank: 4 neat denomination columns aligned with bankChipHitMeshes at z = 0.71
         const bankDenoms: ChipDenomination[] = [1, 5, 25, 100];
         const availableChips = Math.max(0, p.chips - table.stagedBet);
         if (availableChips > 0) {
@@ -1747,7 +2203,7 @@ export class CasinoScene {
               const xPos = (idx - 1.5) * 0.068;
               const numStack = Math.min(10, Math.max(3, Math.floor(availableChips / (denom * 2)) + 2));
               for (let r = 0; r < numStack; r++) {
-                const tPos = new THREE.Vector3(xPos, 0.763 + r * 0.0046, 0.76);
+                const tPos = new THREE.Vector3(xPos, 0.763 + r * 0.0046, 0.71);
                 nextInstances.push({
                   denom,
                   currentPos: tPos.clone(),
@@ -1852,21 +2308,23 @@ export class CasinoScene {
     this.raycaster.ray.copy(ray);
     let anyHovered = false;
 
-    // 1. Check 3D Spatial HUD Buttons
-    const spatialMeshes = this.spatialButtons.map((b) => b.mesh);
-    const btnHits = this.raycaster.intersectObjects(spatialMeshes, false);
-    const hitBtnId =
-      btnHits.length > 0 ? (btnHits[0].object.userData.buttonId as SpatialButtonRef['id']) : null;
-    if (hitBtnId !== this.hoveredButtonId) {
-      this.hoveredButtonId = hitBtnId;
-      this.spatialButtons.forEach((b) => {
-        b.hovered = b.id === hitBtnId;
-      });
-      if (this.latestTable && this.latestPlayers.length > 0) {
-        this.updateSpatialHUD(this.latestTable, this.latestPlayers[0], this.latestIsPeeking);
+    // 1. Check 3D Spatial HUD Buttons (only active in Pure 3D mode or WebXR)
+    if (!this.show2DHUD || this.isInXR) {
+      const spatialMeshes = this.spatialButtons.map((b) => b.mesh);
+      const btnHits = this.raycaster.intersectObjects(spatialMeshes, false);
+      const hitBtnId =
+        btnHits.length > 0 ? (btnHits[0].object.userData.buttonId as SpatialButtonRef['id']) : null;
+      if (hitBtnId !== this.hoveredButtonId) {
+        this.hoveredButtonId = hitBtnId;
+        this.spatialButtons.forEach((b) => {
+          b.hovered = b.id === hitBtnId;
+        });
+        if (this.latestTable && this.latestPlayers.length > 0) {
+          this.updateSpatialHUD(this.latestTable, this.latestPlayers[0], this.latestIsPeeking);
+        }
       }
+      if (hitBtnId) anyHovered = true;
     }
-    if (hitBtnId) anyHovered = true;
 
     // 2. Check Seat #0 Bank Chips
     const chipHits = this.raycaster.intersectObjects(this.bankChipHitMeshes, false);
@@ -1877,7 +2335,7 @@ export class CasinoScene {
       if (hitDenom !== null) {
         const denomIdx = [1, 5, 25, 100].indexOf(hitDenom);
         this.bankChipHoverRing.visible = true;
-        this.bankChipHoverRing.position.set((denomIdx - 1.5) * 0.068, 0.764, 0.76);
+        this.bankChipHoverRing.position.set((denomIdx - 1.5) * 0.068, 0.764, 0.71);
         (this.bankChipHoverRing.material as THREE.MeshBasicMaterial).opacity = 0.85;
         anyHovered = true;
       } else {
@@ -1905,13 +2363,15 @@ export class CasinoScene {
   public handleRayDown(ray: THREE.Ray): boolean {
     this.raycaster.ray.copy(ray);
 
-    // 1. Check 3D World-Anchored Spatial HUD Buttons on Table Rim
-    const spatialMeshes = this.spatialButtons.map((b) => b.mesh);
-    const btnHits = this.raycaster.intersectObjects(spatialMeshes, false);
-    if (btnHits.length > 0) {
-      const buttonId = btnHits[0].object.userData.buttonId as SpatialButtonRef['id'];
-      this.triggerSpatialButton(buttonId);
-      return true;
+    // 1. Check 3D World-Anchored Spatial HUD Buttons on Table Rim (only when visible)
+    if (!this.show2DHUD || this.isInXR) {
+      const spatialMeshes = this.spatialButtons.map((b) => b.mesh);
+      const btnHits = this.raycaster.intersectObjects(spatialMeshes, false);
+      if (btnHits.length > 0) {
+        const buttonId = btnHits[0].object.userData.buttonId as SpatialButtonRef['id'];
+        this.triggerSpatialButton(buttonId);
+        return true;
+      }
     }
 
     const human = this.latestPlayers[0];
@@ -2300,9 +2760,21 @@ export class CasinoScene {
           this.dealerLeftArm.rotation.set(0, 0, 0);
           this.dealerRightArm.rotation.set(0, 0, 0);
         }
+
+        if (this.dealerHeadGroup) {
+          this.animateCharacterMicroBehaviors(
+            this.dealerHeadGroup,
+            this.dealerLeftArm,
+            this.dealerRightArm,
+            elapsed,
+            0,
+            this.dealerAction !== 'idle',
+            false
+          );
+        }
       }
 
-      // 7. Animate Articulated AI Player Rigs (Head Tracking, Bao's Phone Scrolling, Tells & Physical Actions)
+      // 7. Animate Articulated AI Player Rigs (Head Tracking, Eyelid Blinking, Gaze Saccades, 5-Finger Hands, Bao's Phone Scrolling & Physical Actions)
       this.avatarPlaques.forEach((plaqueRef, seatIdx) => {
         const actionAge = elapsed - plaqueRef.actionTimer;
         if (plaqueRef.actionType !== 'idle' && actionAge > 0.95) {
@@ -2382,22 +2854,18 @@ export class CasinoScene {
 
         // Physical Action Choreography Overrides (Check Knock, Chip Push, Fold Flick, Celebrate)
         if (plaqueRef.actionType === 'check_knock') {
-          // Double-tap table knock
           const knock = Math.abs(Math.sin(actionAge * Math.PI * 4.2)) * 0.055;
           rightArmPos.set(baseShoulderX - 0.02, 0.36 + knock, 0.06);
           rightArmRotX = 0.22 - knock * 1.8;
         } else if (plaqueRef.actionType === 'chip_push') {
-          // Forward arm reach pushing chips into the pot
           const push = Math.sin(Math.min(1, actionAge * 1.3) * Math.PI);
           rightArmPos.set(baseShoulderX - 0.03, 0.37 + push * 0.02, 0.01 + push * 0.15);
           rightArmRotX = -0.28 * push;
         } else if (plaqueRef.actionType === 'fold_flick') {
-          // Quick wrist flick mucking cards
           const flick = Math.sin(Math.min(1, actionAge * 1.8) * Math.PI);
           rightArmPos.set(baseShoulderX - flick * 0.06, 0.36, 0.02 + flick * 0.1);
           rightArmRotX = -0.15 * flick;
         } else if (plaqueRef.actionType === 'celebrate') {
-          // Raised arms victory pump
           const cheer = Math.abs(Math.sin(actionAge * Math.PI * 3));
           leftArmPos.set(-baseShoulderX, 0.42 + cheer * 0.06, 0.02);
           rightArmPos.set(baseShoulderX, 0.42 + cheer * 0.06, 0.02);
@@ -2417,6 +2885,18 @@ export class CasinoScene {
           rightArmRotX,
           0.18
         );
+
+        // Animate lifelike blinking, eye-gaze saccades, and subtle 5-finger curl
+        this.animateCharacterMicroBehaviors(
+          plaqueRef.headGroup,
+          plaqueRef.leftArmGroup,
+          plaqueRef.rightArmGroup,
+          elapsed,
+          seatIdx * 1.73,
+          plaqueRef.activeTell !== 'none' || plaqueRef.actionType !== 'idle',
+          plaqueRef.isWatchingPhone
+        );
+
         plaqueRef.mesh.lookAt(this.camera.position);
       });
 
@@ -2426,12 +2906,390 @@ export class CasinoScene {
     this.renderer.setAnimationLoop(animate);
   }
 
+  /**
+   * Drives lifelike periodic eyelid blinking, ocular saccades (iris/pupil tracking),
+   * eyebrow micro-expressions, and articulated 5-finger breathing curls.
+   */
+  private animateCharacterMicroBehaviors(
+    headGroup: THREE.Group,
+    leftArmGroup: THREE.Group,
+    rightArmGroup: THREE.Group,
+    elapsed: number,
+    phaseOffset: number,
+    isFocusedOrTell: boolean,
+    isWatchingPhone: boolean
+  ) {
+    const leftLid = headGroup.userData.leftEyeLid as THREE.Mesh | undefined;
+    const rightLid = headGroup.userData.rightEyeLid as THREE.Mesh | undefined;
+    if (leftLid && rightLid) {
+      const baseRot = (leftLid.userData.baseRotX as number) ?? 0.14;
+      // Natural blink every ~3.6 seconds (140ms rapid closure & reopen)
+      const blinkCycle = (elapsed + phaseOffset) % 3.6;
+      const blinkWave =
+        blinkCycle < 0.14 ? Math.sin((blinkCycle / 0.14) * Math.PI) : 0;
+      const focusSquint = isFocusedOrTell ? 0.14 : isWatchingPhone ? 0.18 : 0;
+      const lidRot = baseRot + focusSquint + blinkWave * 0.92;
+      leftLid.rotation.x = lidRot;
+      rightLid.rotation.x = lidRot;
+    }
+
+    const leftIris = headGroup.userData.leftIrisGroup as THREE.Group | undefined;
+    const rightIris = headGroup.userData.rightIrisGroup as THREE.Group | undefined;
+    if (leftIris && rightIris) {
+      // Subtle human eye saccade micro-movements
+      const saccadeStep = Math.floor((elapsed + phaseOffset) * 1.4);
+      const saccadeX = Math.sin(saccadeStep * 2.7 + phaseOffset) * 0.0018;
+      const saccadeY = isWatchingPhone
+        ? -0.0022
+        : Math.cos(saccadeStep * 1.9 + phaseOffset) * 0.0011;
+      leftIris.position.x = THREE.MathUtils.lerp(leftIris.position.x, saccadeX, 0.25);
+      leftIris.position.y = THREE.MathUtils.lerp(leftIris.position.y, saccadeY, 0.25);
+      rightIris.position.x = THREE.MathUtils.lerp(rightIris.position.x, saccadeX, 0.25);
+      rightIris.position.y = THREE.MathUtils.lerp(rightIris.position.y, saccadeY, 0.25);
+    }
+
+    // Subtle 5-finger curl breathing on left/right articulated hands
+    [leftArmGroup, rightArmGroup].forEach((arm, armIdx) => {
+      const handRig = arm.userData.handRig as THREE.Group | undefined;
+      const fingers = handRig?.userData.fingers as THREE.Group[] | undefined;
+      if (fingers) {
+        fingers.forEach((fGroup, fIdx) => {
+          if (fIdx < 4) {
+            const baseCurl = 0.28 + fIdx * 0.04;
+            const wave = Math.sin(elapsed * 2.1 + phaseOffset + armIdx + fIdx * 0.4) * 0.045;
+            fGroup.rotation.x = baseCurl + wave;
+          }
+        });
+      }
+    });
+  }
+
   private onResize = () => {
     if (!this.container) return;
     this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
   };
+
+  /**
+   * Projects all 3D characters' head and upper-torso bounding spheres into 2D viewport pixel coordinates.
+   * Used by the UX/UI Verification Harness to assert 0% sightline occlusion by 2D HUD overlays.
+   */
+  public getCharacterScreenBounds(): Array<{
+    id: string;
+    role: CharacterModelRole;
+    name: string;
+    headRect: { left: number; top: number; right: number; bottom: number; width: number; height: number };
+    torsoRect: { left: number; top: number; right: number; bottom: number; width: number; height: number };
+    combinedRect: { left: number; top: number; right: number; bottom: number; width: number; height: number };
+    inFrustum: boolean;
+  }> {
+    this.scene.updateMatrixWorld(true);
+    this.camera.updateMatrixWorld(true);
+    this.camera.updateProjectionMatrix();
+
+    const width = this.container?.clientWidth || window.innerWidth;
+    const height = this.container?.clientHeight || window.innerHeight;
+    const frustum = new THREE.Frustum();
+    const projScreenMatrix = new THREE.Matrix4().multiplyMatrices(
+      this.camera.projectionMatrix,
+      this.camera.matrixWorldInverse
+    );
+    frustum.setFromProjectionMatrix(projScreenMatrix);
+
+    const projectSphereToRect = (worldCenter: THREE.Vector3, radius: number) => {
+      const sampleOffsets = [
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(radius, 0, 0),
+        new THREE.Vector3(-radius, 0, 0),
+        new THREE.Vector3(0, radius, 0),
+        new THREE.Vector3(0, -radius, 0),
+        new THREE.Vector3(0, 0, radius),
+        new THREE.Vector3(0, 0, -radius),
+      ];
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const off of sampleOffsets) {
+        const pt = worldCenter.clone().add(off).project(this.camera);
+        const sx = (pt.x * 0.5 + 0.5) * width;
+        const sy = (-pt.y * 0.5 + 0.5) * height;
+        if (sx < minX) minX = sx;
+        if (sy < minY) minY = sy;
+        if (sx > maxX) maxX = sx;
+        if (sy > maxY) maxY = sy;
+      }
+      return {
+        left: Math.round(minX),
+        top: Math.round(minY),
+        right: Math.round(maxX),
+        bottom: Math.round(maxY),
+        width: Math.max(0, Math.round(maxX - minX)),
+        height: Math.max(0, Math.round(maxY - minY)),
+      };
+    };
+
+    const entries: Array<{
+      id: string;
+      role: CharacterModelRole;
+      name: string;
+      headGroup: THREE.Group;
+      torsoCenterLocal: THREE.Vector3;
+      rootGroup: THREE.Group;
+    }> = [];
+
+    if (this.dealerGroup && this.dealerHeadGroup) {
+      entries.push({
+        id: 'dealer',
+        role: 'dealer',
+        name: 'Laurent (Dealer)',
+        headGroup: this.dealerHeadGroup,
+        torsoCenterLocal: new THREE.Vector3(0, 0.36, 0),
+        rootGroup: this.dealerGroup,
+      });
+    }
+
+    const seatRoleNames: Record<number, { role: CharacterModelRole; name: string }> = {
+      1: { role: 'viktor', name: 'Viktor' },
+      2: { role: 'elena', name: 'Elena' },
+      3: { role: 'bao', name: 'Bao' },
+      4: { role: 'marcus', name: 'Marcus' },
+    };
+
+    this.avatarPlaques.forEach((p, seatIdx) => {
+      const meta = seatRoleNames[seatIdx];
+      if (!meta) return;
+      entries.push({
+        id: `seat_${seatIdx}`,
+        role: meta.role,
+        name: meta.name,
+        headGroup: p.headGroup,
+        torsoCenterLocal: new THREE.Vector3(0, 0.32, 0),
+        rootGroup: p.avatarGroup,
+      });
+    });
+
+    return entries.map((entry) => {
+      const headWorld = new THREE.Vector3();
+      entry.headGroup.getWorldPosition(headWorld);
+      const torsoWorld = entry.torsoCenterLocal.clone();
+      entry.rootGroup.localToWorld(torsoWorld);
+
+      const inFrustum =
+        frustum.containsPoint(headWorld) &&
+        headWorld.distanceTo(this.camera.position) < 6.0;
+
+      const headRect = projectSphereToRect(headWorld, 0.105);
+      const torsoRect = projectSphereToRect(torsoWorld, 0.135);
+      const combinedRect = {
+        left: Math.min(headRect.left, torsoRect.left),
+        top: Math.min(headRect.top, torsoRect.top),
+        right: Math.max(headRect.right, torsoRect.right),
+        bottom: Math.max(headRect.bottom, torsoRect.bottom),
+        width: Math.max(0, Math.max(headRect.right, torsoRect.right) - Math.min(headRect.left, torsoRect.left)),
+        height: Math.max(0, Math.max(headRect.bottom, torsoRect.bottom) - Math.min(headRect.top, torsoRect.top)),
+      };
+
+      return {
+        id: entry.id,
+        role: entry.role,
+        name: entry.name,
+        headRect,
+        torsoRect,
+        combinedRect,
+        inFrustum,
+      };
+    });
+  }
+
+  /**
+   * Projects 3D Table Center Safe-Zone regions (Community Board, Center Pot, Golden Betting Ring,
+   * Seat #0 Hole Cards & Bank Chips, 3D AI Floating Plaques, and 3D Spatial Rim Buttons) into 2D
+   * viewport coordinates (`ScreenBoundingRect`) for the HUD & UI Verification Harness.
+   */
+  public getTableSafeZoneScreenBounds(): {
+    communityBoardRect: ScreenBoundingRect;
+    centerPotRect: ScreenBoundingRect;
+    bettingRingRect: ScreenBoundingRect;
+    heroHoleCardsRect: ScreenBoundingRect;
+    heroBankChipsRect: ScreenBoundingRect;
+    aiPlaques: Array<{
+      seatIndex: number;
+      name: string;
+      rect: ScreenBoundingRect;
+      inFrustum: boolean;
+      visible: boolean;
+    }>;
+    spatialButtons: Array<{
+      id: string;
+      rect: ScreenBoundingRect;
+      inFrustum: boolean;
+      visible: boolean;
+    }>;
+  } {
+    this.scene.updateMatrixWorld(true);
+    this.camera.updateMatrixWorld(true);
+    this.camera.updateProjectionMatrix();
+
+    const width = this.container?.clientWidth || window.innerWidth;
+    const height = this.container?.clientHeight || window.innerHeight;
+    const frustum = new THREE.Frustum();
+    const projScreenMatrix = new THREE.Matrix4().multiplyMatrices(
+      this.camera.projectionMatrix,
+      this.camera.matrixWorldInverse
+    );
+    frustum.setFromProjectionMatrix(projScreenMatrix);
+
+    const projectBoxToRect = (minPt: THREE.Vector3, maxPt: THREE.Vector3): ScreenBoundingRect => {
+      const corners = [
+        new THREE.Vector3(minPt.x, minPt.y, minPt.z),
+        new THREE.Vector3(maxPt.x, minPt.y, minPt.z),
+        new THREE.Vector3(minPt.x, maxPt.y, minPt.z),
+        new THREE.Vector3(maxPt.x, maxPt.y, minPt.z),
+        new THREE.Vector3(minPt.x, minPt.y, maxPt.z),
+        new THREE.Vector3(maxPt.x, minPt.y, maxPt.z),
+        new THREE.Vector3(minPt.x, maxPt.y, maxPt.z),
+        new THREE.Vector3(maxPt.x, maxPt.y, maxPt.z),
+      ];
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const c of corners) {
+        const pt = c.project(this.camera);
+        const sx = (pt.x * 0.5 + 0.5) * width;
+        const sy = (-pt.y * 0.5 + 0.5) * height;
+        if (sx < minX) minX = sx;
+        if (sy < minY) minY = sy;
+        if (sx > maxX) maxX = sx;
+        if (sy > maxY) maxY = sy;
+      }
+      return {
+        left: Math.round(minX),
+        top: Math.round(minY),
+        right: Math.round(maxX),
+        bottom: Math.round(maxY),
+        width: Math.max(0, Math.round(maxX - minX)),
+        height: Math.max(0, Math.round(maxY - minY)),
+      };
+    };
+
+    const projectMeshPlaneToRect = (mesh: THREE.Mesh, halfW: number, halfH: number): ScreenBoundingRect => {
+      const localCorners = [
+        new THREE.Vector3(-halfW, -halfH, 0),
+        new THREE.Vector3(halfW, -halfH, 0),
+        new THREE.Vector3(-halfW, halfH, 0),
+        new THREE.Vector3(halfW, halfH, 0),
+      ];
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const lc of localCorners) {
+        const wc = lc.clone();
+        mesh.localToWorld(wc);
+        const pt = wc.project(this.camera);
+        const sx = (pt.x * 0.5 + 0.5) * width;
+        const sy = (-pt.y * 0.5 + 0.5) * height;
+        if (sx < minX) minX = sx;
+        if (sy < minY) minY = sy;
+        if (sx > maxX) maxX = sx;
+        if (sy > maxY) maxY = sy;
+      }
+      return {
+        left: Math.round(minX),
+        top: Math.round(minY),
+        right: Math.round(maxX),
+        bottom: Math.round(maxY),
+        width: Math.max(0, Math.round(maxX - minX)),
+        height: Math.max(0, Math.round(maxY - minY)),
+      };
+    };
+
+    const communityBoardRect = projectBoxToRect(
+      new THREE.Vector3(-0.33, 0.762, -0.12),
+      new THREE.Vector3(0.33, 0.775, 0.0)
+    );
+    const centerPotRect = projectBoxToRect(
+      new THREE.Vector3(-0.16, 0.762, 0.08),
+      new THREE.Vector3(0.16, 0.805, 0.20)
+    );
+    const bettingRingRect = projectBoxToRect(
+      new THREE.Vector3(-0.12, 0.762, 0.32),
+      new THREE.Vector3(0.12, 0.785, 0.54)
+    );
+    const heroHoleCardsRect = projectBoxToRect(
+      new THREE.Vector3(-0.095, 0.762, 0.56),
+      new THREE.Vector3(0.095, 0.785, 0.68)
+    );
+    const heroBankChipsRect = projectBoxToRect(
+      new THREE.Vector3(-0.125, 0.762, 0.68),
+      new THREE.Vector3(0.125, 0.805, 0.74)
+    );
+
+    const seatNames: Record<number, string> = {
+      1: 'Viktor',
+      2: 'Elena',
+      3: 'Bao',
+      4: 'Marcus',
+    };
+
+    const aiPlaques: Array<{
+      seatIndex: number;
+      name: string;
+      rect: ScreenBoundingRect;
+      inFrustum: boolean;
+      visible: boolean;
+    }> = [];
+
+    this.avatarPlaques.forEach((p, seatIdx) => {
+      const worldCenter = new THREE.Vector3();
+      p.mesh.getWorldPosition(worldCenter);
+      const rect = projectMeshPlaneToRect(p.mesh, 0.20, 0.085);
+      const inFrustum =
+        frustum.containsPoint(worldCenter) &&
+        rect.left >= 0 &&
+        rect.right <= width &&
+        rect.top >= 0 &&
+        rect.bottom <= height;
+      aiPlaques.push({
+        seatIndex: seatIdx,
+        name: seatNames[seatIdx] || `Seat ${seatIdx}`,
+        rect,
+        inFrustum,
+        visible: p.mesh.visible,
+      });
+    });
+
+    const spatialButtons = this.spatialButtons.map((b) => {
+      const worldCenter = new THREE.Vector3();
+      b.mesh.getWorldPosition(worldCenter);
+      const rect = projectMeshPlaneToRect(b.mesh, 0.0825, 0.033);
+      const inFrustum =
+        frustum.containsPoint(worldCenter) &&
+        rect.left >= 0 &&
+        rect.right <= width &&
+        rect.top >= 0 &&
+        rect.bottom <= height;
+      return {
+        id: b.id,
+        rect,
+        inFrustum,
+        visible: b.mesh.visible,
+      };
+    });
+
+    return {
+      communityBoardRect,
+      centerPotRect,
+      bettingRingRect,
+      heroHoleCardsRect,
+      heroBankChipsRect,
+      aiPlaques,
+      spatialButtons,
+    };
+  }
 
   /**
    * Captures a studio-lit 3D modeling portrait directly from the live Three.js character rig
@@ -2524,7 +3382,7 @@ export class CasinoScene {
     keyLight.position.copy(localKey);
     this.scene.add(keyLight);
 
-    const rimLight = new THREE.PointLight(role === 'bao' ? '#38bdf8' : '#facc15', 1.8, 2.0);
+    const rimLight = new THREE.PointLight(role === 'bao' ? '#38bdf8' : '#d4af37', 1.8, 2.0);
     const localRim = new THREE.Vector3(-0.32, 0.68, -0.35);
     targetGroup.localToWorld(localRim);
     rimLight.position.copy(localRim);
@@ -2568,8 +3426,8 @@ export class CasinoScene {
   }
 
   /**
-   * Runs programmatic 3D spatial assertions across all table elements, character rigs,
-   * chip stacks, spatial HUD buttons, and WebGL draw calls.
+   * Runs programmatic 3D spatial & UX/UI graphic guideline assertions across all table elements,
+   * character human-presence rigs, sightline-safe rail plaques, chip stacks, and WebGL draw calls.
    */
   public runSpatialAudit(): SpatialAuditReport {
     const checks: SpatialAuditCheck[] = [];
@@ -2593,7 +3451,34 @@ export class CasinoScene {
       metric: `minNormalizedRadius = ${minRimNorm.toFixed(3)} (target >= 1.150)`,
     });
 
-    // 2. Limb & Head Attachment Check: Dealer & AI local coordinates must not float or detach below the table
+    // 2. Character Human-Presence Rig Check: Subsurface skin, cornea clearcoat eyes, eyelid/gaze rig, and 5-finger hands
+    const dealerHasRig = Boolean(
+      this.dealerHeadGroup?.userData.hasRealisticFacialRig &&
+      this.dealerLeftArm?.userData.handRig &&
+      this.dealerRightArm?.userData.handRig
+    );
+    let aiRigsComplete = true;
+    let maxPlaqueLocalY = 0;
+    this.avatarPlaques.forEach((p) => {
+      if (
+        !p.headGroup.userData.hasRealisticFacialRig ||
+        !p.leftArmGroup.userData.handRig ||
+        !p.rightArmGroup.userData.handRig
+      ) {
+        aiRigsComplete = false;
+      }
+      if (p.mesh.position.y > maxPlaqueLocalY) {
+        maxPlaqueLocalY = p.mesh.position.y;
+      }
+    });
+    checks.push({
+      id: 'character_human_presence_rig',
+      label: '5-Character Subsurface Skin, Cornea Clearcoat, Blink/Saccade & 5-Finger Hand Rigs',
+      passed: dealerHasRig && aiRigsComplete && maxPlaqueLocalY <= 0.25,
+      metric: `dealerRig=${dealerHasRig}, aiRigs=${aiRigsComplete}, maxPlaqueY=${maxPlaqueLocalY.toFixed(2)}m (<=0.25m)`,
+    });
+
+    // 3. Limb & Head Attachment Check: Dealer & AI local coordinates must not float or detach below the table
     const dealerHeadY = this.dealerHeadGroup ? this.dealerHeadGroup.position.y : 0;
     const dealerArmY = this.dealerLeftArm ? this.dealerLeftArm.position.y : 0;
     let aiArmsAttached = true;
@@ -2617,7 +3502,7 @@ export class CasinoScene {
       metric: `dealerHeadY=${dealerHeadY.toFixed(3)}m, dealerArmY=${dealerArmY.toFixed(3)}m, aiArmsAttached=${aiArmsAttached}`,
     });
 
-    // 3. Chip Stacks Inside Felt Ellipse: All active chip instances must sit inside the (1.24, 0.818) inner felt boundary and above y=0.760m
+    // 4. Chip Stacks Inside Felt Ellipse: All active chip instances must sit inside the (1.24, 0.818) inner felt boundary and above y=0.760m
     let maxChipFeltNorm = 0;
     let minChipY = 0.763;
     for (const inst of this.chipInstances) {
@@ -2632,7 +3517,7 @@ export class CasinoScene {
       metric: `maxFeltNorm = ${maxChipFeltNorm.toFixed(3)} (<= 0.980), minChipY = ${minChipY.toFixed(3)}m`,
     });
 
-    // 4. Spatial Rim Buttons Above Leather Armrest (y >= 0.82m)
+    // 5. Spatial Rim Buttons Above Leather Armrest (y >= 0.82m)
     const minBtnY = this.spatialButtons.reduce(
       (min, b) => Math.min(min, b.mesh.position.y),
       Infinity
@@ -2644,7 +3529,7 @@ export class CasinoScene {
       metric: `minButtonY = ${minBtnY.toFixed(3)}m (armrest top = 0.800m)`,
     });
 
-    // 5. Ergonomic Seated Gaze Pitch (-6 deg to -28 deg from Seat #0 Eye Level 1.25m to Center Board 0.76m)
+    // 6. Ergonomic Seated Gaze Pitch (-6 deg to -28 deg from Seat #0 Eye Level 1.25m to Center Board 0.76m)
     const eyePos = new THREE.Vector3(0, 1.25, 1.52);
     const boardPos = new THREE.Vector3(0, 0.76, -0.05);
     const dy = boardPos.y - eyePos.y;
@@ -2657,14 +3542,14 @@ export class CasinoScene {
       metric: `gazePitch = ${pitchDeg.toFixed(1)}°`,
     });
 
-    // 6. WebGL Draw Call Budget Check
+    // 7. WebGL Draw Call Budget Check (Strict UX/UI Guideline Threshold <= 450)
     const drawCalls = this.renderer.info.render.calls;
     const triangles = this.renderer.info.render.triangles;
     checks.push({
       id: 'webgl_draw_call_budget',
-      label: 'WebGL Draw Call Budget (Instanced Chips & Batched Geometry)',
-      passed: drawCalls <= 550,
-      metric: `drawCalls = ${drawCalls}, triangles = ${triangles}`,
+      label: 'WebGL Draw Call Budget (<= 450 Draw Calls)',
+      passed: drawCalls <= 450,
+      metric: `drawCalls = ${drawCalls} (<= 450), triangles = ${triangles}`,
     });
 
     return {
@@ -2682,8 +3567,8 @@ export class CasinoScene {
     window.removeEventListener('resize', this.onResize);
     const dom = this.renderer.domElement;
     dom.removeEventListener('pointerdown', this.onPointerDown);
-    window.removeEventListener('pointermove', this.onPointerMove);
-    window.removeEventListener('pointerup', this.onPointerUp);
+    dom.removeEventListener('pointermove', this.onPointerMove);
+    dom.removeEventListener('pointerup', this.onPointerUp);
     this.controls.dispose();
     this.renderer.dispose();
     if (this.container && this.renderer.domElement) {

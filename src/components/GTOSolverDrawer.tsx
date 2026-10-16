@@ -45,27 +45,27 @@ export function getGradeBadgeStyle(grade: HandDecisionRecord['grade']) {
   switch (grade) {
     case 'best':
       return {
-        label: '🔥 BEST MOVE',
-        bg: 'bg-emerald-500/25 border-emerald-400 text-emerald-200',
-        text: 'text-emerald-300',
+        label: 'BEST MOVE',
+        bg: 'bg-[#d4af37]/20 border-[#d4af37] text-[#f3e5ab]',
+        text: 'text-[#f3e5ab]',
       };
     case 'good':
       return {
-        label: '✅ GOOD LINE',
-        bg: 'bg-cyan-500/20 border-cyan-400/70 text-cyan-200',
-        text: 'text-cyan-300',
+        label: 'SOLID LINE',
+        bg: 'bg-[#0f141c] border-[#d4af37]/50 text-[#f8fafc]',
+        text: 'text-[#f8fafc]',
       };
     case 'inaccuracy':
       return {
-        label: '⚠️ INACCURACY',
-        bg: 'bg-amber-500/25 border-amber-400 text-amber-200',
-        text: 'text-amber-300',
+        label: 'INACCURACY',
+        bg: 'bg-[#090c12] border-slate-600 text-[#94a3b8]',
+        text: 'text-[#94a3b8]',
       };
     case 'blunder':
       return {
-        label: '❌ BLUNDER',
-        bg: 'bg-rose-500/30 border-rose-400 text-rose-200',
-        text: 'text-rose-300',
+        label: 'EV LOSS',
+        bg: 'bg-[#090c12] border-slate-700 text-[#94a3b8]',
+        text: 'text-[#94a3b8]',
       };
   }
 }
@@ -73,302 +73,72 @@ export function getGradeBadgeStyle(grade: HandDecisionRecord['grade']) {
 export const CompactGTOPill: React.FC<CompactGTOPillProps> = ({
   analysis,
   solverMode,
-  onChangeSolverMode,
   cardsVisible,
-  isHumanTurn,
   table,
   humanPlayer,
   lastDecisionRecord,
-  onSelectSizing,
-  onExecuteAction,
   onOpenFullDrawer,
 }) => {
-  const [collapsed, setCollapsed] = useState(false);
-
   const activeRec = solverMode === 'exploit' ? analysis.exploit : analysis.pureGto;
   const activeEquity =
     solverMode === 'exploit' ? analysis.exploitEquityPct : analysis.pureGtoEquityPct;
-  const equityDelta = Math.round((analysis.exploitEquityPct - analysis.pureGtoEquityPct) * 10) / 10;
 
   const recentToast =
     lastDecisionRecord &&
     lastDecisionRecord.handNumber === table.handCount &&
-    Date.now() - lastDecisionRecord.timestamp < 7500
+    Date.now() - lastDecisionRecord.timestamp < 6500
       ? lastDecisionRecord
       : null;
 
   return (
-    <div className="glass-panel rounded-2xl border border-cyan-400/40 bg-slate-950/90 px-3.5 py-2.5 shadow-2xl transition-all">
-      {/* Top Header Strip */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 text-[11px] font-black tracking-wide">
-            <Brain className="w-3.5 h-3.5 text-cyan-400" />
-            <span>GTO WIZARD HUD</span>
-          </div>
-
-          {/* Position & Effective Stack Pill */}
-          <span
-            className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-700 text-[11px] font-mono font-bold text-amber-300"
-            title={analysis.positionDescription}
-          >
-            {analysis.position} • {analysis.effectiveStackBB} BB
+    <div
+      data-ux-component="gto-telemetry-strip"
+      onClick={onOpenFullDrawer}
+      className="cursor-pointer rounded-xl border border-[#d4af37]/35 bg-[#090c12]/92 px-3 py-1.5 shadow-xl transition-all hover:border-[#d4af37]/70"
+      title="클릭하여 13×13 GTO 레인지 매트릭스 및 상세 솔버 열기"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#d4af37]/15 border border-[#d4af37]/45 text-[#f3e5ab] font-bold tracking-wider uppercase text-[10px]">
+            <Brain className="w-3 h-3 text-[#d4af37]" />
+            <span>{solverMode === 'exploit' ? 'GTO · EXPLOIT' : 'GTO · NASH'}</span>
           </span>
 
-          {/* Core Public Math Telemetry (Always visible even before peeking!) */}
-          <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-mono">
-            <span className="px-1.5 py-0.5 rounded bg-slate-900/90 text-slate-300 border border-slate-800">
-              Pot Odds: <strong className="text-cyan-300">{analysis.potOddsPct}%</strong> ({analysis.potOddsRatio})
+          <span className="font-mono font-bold text-[#f8fafc]">
+            {analysis.position} · {analysis.effectiveStackBB} BB
+          </span>
+
+          <span className="hidden sm:inline text-[#94a3b8] font-mono">
+            Pot Odds <strong className="text-[#f3e5ab]">{analysis.potOddsPct}%</strong> · SPR{' '}
+            <strong className="text-[#f8fafc]">{analysis.spr}</strong>
+            {table.currentHighBet > humanPlayer.currentBet ? ` · MDF ${analysis.mdfPct}%` : ''}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 font-mono">
+          {!cardsVisible ? (
+            <span className="inline-flex items-center gap-1 text-[#94a3b8] text-[10px]">
+              <Lock className="w-3 h-3 text-[#d4af37]" />
+              <span>홀카드 확인(Peek) 시 실시간 에쿼티 및 최적 빈도 표시</span>
             </span>
-            <span className="px-1.5 py-0.5 rounded bg-slate-900/90 text-slate-300 border border-slate-800">
-              SPR: <strong className="text-amber-300">{analysis.spr}</strong>
-            </span>
-            {table.currentHighBet > humanPlayer.currentBet && (
-              <span
-                className="px-1.5 py-0.5 rounded bg-slate-900/90 text-slate-300 border border-slate-800"
-                title="Minimum Defense Frequency to prevent opponent from profiting with any two cards"
-              >
-                MDF: <strong className="text-purple-300">{analysis.mdfPct}%</strong>
+          ) : (
+            <>
+              <span className="px-2 py-0.5 rounded bg-[#0f141c] border border-slate-800 text-[#f8fafc] font-bold">
+                {analysis.heroCombo} · Eq <strong className="text-[#f3e5ab]">{activeEquity}%</strong>
               </span>
-            )}
-            <span className="px-1.5 py-0.5 rounded bg-slate-900/90 text-slate-300 border border-slate-800">
-              {analysis.boardTexture}
-            </span>
-          </div>
-        </div>
-
-        {/* Mode Switcher (Exploit vs Pure GTO) + 13x13 Matrix Drawer Button */}
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-[10px] font-bold">
-            <button
-              onClick={() => onChangeSolverMode('exploit')}
-              className={`px-2 py-0.5 rounded-md flex items-center gap-1 transition-all ${
-                solverMode === 'exploit'
-                  ? 'bg-amber-500 text-slate-950 font-black shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-              title="Node-Locked Exploitative Solver: Adjusts for AI VPIP/PFR and Live 3D Physical Tells"
-            >
-              <Zap className="w-3 h-3" />
-              <span>Exploit</span>
-            </button>
-            <button
-              onClick={() => onChangeSolverMode('pure_gto')}
-              className={`px-2 py-0.5 rounded-md transition-all ${
-                solverMode === 'pure_gto'
-                  ? 'bg-cyan-500 text-slate-950 font-black shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-              title="Pure Theoretical 5-Max Nash Equilibrium GTO"
-            >
-              Pure GTO
-            </button>
-          </div>
-
-          <button
-            onClick={onOpenFullDrawer}
-            className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 text-cyan-200 text-[10px] font-extrabold flex items-center gap-1 transition-all"
-            title="Open Full 13x13 Range Matrix, Villain Tell-Lock & EV Solver"
-          >
-            <Grid className="w-3 h-3 text-cyan-400" />
-            <span>13×13 Matrix</span>
-          </button>
-
-          <button
-            onClick={() => setCollapsed((prev) => !prev)}
-            className="p-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white"
-            title={collapsed ? 'Expand GTO Advisor' : 'Collapse GTO Advisor'}
-          >
-            {collapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </button>
-        </div>
-      </div>
-
-      {/* Instant Decision Grade Feedback Toast when Hero just acted */}
-      {recentToast && (
-        <div
-          className={`mt-2 px-3 py-1.5 rounded-xl border text-xs flex items-center justify-between gap-2 animate-fade-in ${
-            getGradeBadgeStyle(recentToast.grade).bg
-          }`}
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="font-black shrink-0 tracking-wide">
+              <span className="px-2 py-0.5 rounded bg-[#d4af37]/20 border border-[#d4af37]/55 text-[#f3e5ab] font-extrabold">
+                추천: {activeRec.bestActionLabel} ({activeRec.bestActionEvBB >= 0 ? '+' : ''}
+                {activeRec.bestActionEvBB.toFixed(2)} BB)
+              </span>
+            </>
+          )}
+          {recentToast && (
+            <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#0f141c] border border-[#d4af37]/40 text-[#f3e5ab] text-[10px] font-bold">
               {getGradeBadgeStyle(recentToast.grade).label}
             </span>
-            <span className="truncate text-[11px] opacity-95">{recentToast.coachingNote}</span>
-          </div>
-          <span className="font-mono font-bold text-[11px] shrink-0">
-            {recentToast.evLossBB === 0
-              ? `+${recentToast.evEarnedBB.toFixed(2)} BB EV`
-              : `-${recentToast.evLossBB.toFixed(2)} BB Loss`}
-          </span>
-        </div>
-      )}
-
-      {!collapsed && (
-        <div className="mt-2 pt-2 border-t border-slate-800/90">
-          {/* RESPECT CARD PEEK MECHANIC: Hide hole-card spoilers until player peeks or locks peek */}
-          {!cardsVisible ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 py-0.5 text-xs">
-              <div className="flex items-center gap-2 text-slate-300">
-                <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>
-                  Hole cards facedown — Hold <strong className="text-amber-300">Peek (Space)</strong> or{' '}
-                  <strong className="text-amber-300">Lock Peek</strong> to unlock live Equity %, Outs & GTO Frequencies.
-                </span>
-              </div>
-              {analysis.primaryVillain?.tellLockTitle && (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-200">
-                  {analysis.primaryVillain.tellLockTitle}
-                </span>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {/* Row 1: Hand Combo, Live Equity %, Outs & Villain Tell Lock */}
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/50 text-amber-200 font-mono font-black text-[11px]">
-                    {analysis.heroCombo} • Top {analysis.heroPercentile}% (Tier {analysis.heroHandTier})
-                  </span>
-
-                  <span className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 font-mono font-bold text-[11px]">
-                    Equity: <strong>{activeEquity}%</strong>
-                    {solverMode === 'exploit' && Math.abs(equityDelta) >= 2 && (
-                      <span
-                        className={`ml-1 text-[10px] ${
-                          equityDelta > 0 ? 'text-emerald-400' : 'text-rose-400'
-                        }`}
-                      >
-                        ({equityDelta > 0 ? `+${equityDelta}%` : `${equityDelta}%`} vs GTO)
-                      </span>
-                    )}
-                  </span>
-
-                  {analysis.outs.totalOuts > 0 && (
-                    <span
-                      className="px-2 py-0.5 rounded bg-purple-500/15 border border-purple-400/40 text-purple-200 font-mono text-[11px]"
-                      title={analysis.outs.keyOutCards.join(' • ')}
-                    >
-                      🎯 <strong>{analysis.outs.totalOuts} Outs</strong> ({analysis.outs.byRiverHitPct}% Hit)
-                    </span>
-                  )}
-                </div>
-
-                {/* Best Action Summary Pill */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
-                    Best Move:
-                  </span>
-                  <span className="px-2.5 py-0.5 rounded-lg bg-gradient-to-r from-amber-500/30 to-emerald-500/30 border border-amber-400/60 text-amber-200 font-extrabold text-xs font-mono">
-                    {activeRec.bestActionLabel} ({activeRec.bestActionEvBB >= 0 ? '+' : ''}
-                    {activeRec.bestActionEvBB.toFixed(2)} BB)
-                  </span>
-                </div>
-              </div>
-
-              {/* Row 2: Visual GTO Mixed-Strategy Frequency Bar (Fold / Call / Raise Small / Raise Big / All-In) */}
-              <div className="w-full h-5 rounded-lg overflow-hidden flex bg-slate-900 border border-slate-800 text-[10px] font-mono font-extrabold">
-                {activeRec.frequencies.fold > 0 && (
-                  <div
-                    style={{ width: `${activeRec.frequencies.fold}%` }}
-                    className="bg-slate-700/90 text-slate-200 flex items-center justify-center truncate px-1 transition-all"
-                    title={`Fold: ${activeRec.frequencies.fold}% (0.00 BB EV)`}
-                  >
-                    {activeRec.frequencies.fold >= 12 ? `Fold ${activeRec.frequencies.fold}%` : ''}
-                  </div>
-                )}
-                {activeRec.frequencies.checkCall > 0 && (
-                  <div
-                    style={{ width: `${activeRec.frequencies.checkCall}%` }}
-                    className="bg-blue-600/85 text-white flex items-center justify-center truncate px-1 transition-all"
-                    title={`Check/Call: ${activeRec.frequencies.checkCall}% (${activeRec.evs.checkCall.toFixed(2)} BB EV)`}
-                  >
-                    {activeRec.frequencies.checkCall >= 12
-                      ? `${table.currentHighBet === humanPlayer.currentBet ? 'Check' : 'Call'} ${
-                          activeRec.frequencies.checkCall
-                        }%`
-                      : ''}
-                  </div>
-                )}
-                {activeRec.frequencies.raiseSmall > 0 && (
-                  <div
-                    style={{ width: `${activeRec.frequencies.raiseSmall}%` }}
-                    className="bg-amber-500/90 text-slate-950 flex items-center justify-center truncate px-1 transition-all"
-                    title={`Raise ${activeRec.sizingPresets.smallLabel}: ${activeRec.frequencies.raiseSmall}% (${activeRec.evs.raiseSmall.toFixed(2)} BB EV)`}
-                  >
-                    {activeRec.frequencies.raiseSmall >= 14
-                      ? `${activeRec.sizingPresets.smallLabel} ${activeRec.frequencies.raiseSmall}%`
-                      : ''}
-                  </div>
-                )}
-                {activeRec.frequencies.raiseBig > 0 && (
-                  <div
-                    style={{ width: `${activeRec.frequencies.raiseBig}%` }}
-                    className="bg-orange-500 text-slate-950 flex items-center justify-center truncate px-1 transition-all"
-                    title={`Raise ${activeRec.sizingPresets.bigLabel}: ${activeRec.frequencies.raiseBig}% (${activeRec.evs.raiseBig.toFixed(2)} BB EV)`}
-                  >
-                    {activeRec.frequencies.raiseBig >= 14
-                      ? `${activeRec.sizingPresets.bigLabel} ${activeRec.frequencies.raiseBig}%`
-                      : ''}
-                  </div>
-                )}
-                {activeRec.frequencies.allin > 0 && (
-                  <div
-                    style={{ width: `${activeRec.frequencies.allin}%` }}
-                    className="bg-rose-600 text-white flex items-center justify-center truncate px-1 transition-all"
-                    title={`All-In: ${activeRec.frequencies.allin}% (${activeRec.evs.allin.toFixed(2)} BB EV)`}
-                  >
-                    {activeRec.frequencies.allin >= 12 ? `All-In ${activeRec.frequencies.allin}%` : ''}
-                  </div>
-                )}
-              </div>
-
-              {/* Row 3: Coaching Insight + 1-Click GTO Sizing / Execute Buttons */}
-              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                <p className="text-slate-300 truncate flex-1" title={activeRec.reasoning}>
-                  <span className="text-cyan-400 font-bold mr-1">
-                    {solverMode === 'exploit' ? '⚡ Exploit:' : '📐 GTO:'}
-                  </span>
-                  {activeRec.reasoning}
-                </p>
-
-                {isHumanTurn && !humanPlayer.folded && table.phase !== 'showdown' && (
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {humanPlayer.chips > Math.max(0, table.currentHighBet - humanPlayer.currentBet) && (
-                      <>
-                        <button
-                          onClick={() => onSelectSizing(activeRec.sizingPresets.smallAmount)}
-                          className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-amber-400/30 text-[10px] font-mono font-bold text-amber-200"
-                          title={`Set slider to ${activeRec.sizingPresets.smallLabel} ($${activeRec.sizingPresets.smallAmount})`}
-                        >
-                          {activeRec.sizingPresets.smallLabel} (${activeRec.sizingPresets.smallAmount})
-                        </button>
-                        <button
-                          onClick={() => onSelectSizing(activeRec.sizingPresets.bigAmount)}
-                          className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-orange-400/30 text-[10px] font-mono font-bold text-orange-200"
-                          title={`Set slider to ${activeRec.sizingPresets.bigLabel} ($${activeRec.sizingPresets.bigAmount})`}
-                        >
-                          {activeRec.sizingPresets.bigLabel} (${activeRec.sizingPresets.bigAmount})
-                        </button>
-                      </>
-                    )}
-
-                    <button
-                      onClick={() => onExecuteAction(activeRec.bestAction)}
-                      className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-500 to-emerald-400 hover:from-cyan-400 hover:to-emerald-300 text-slate-950 font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shadow-md active:scale-95 transition-all"
-                      title={`Immediately execute optimal solver action: ${activeRec.bestActionLabel}`}
-                    >
-                      <Zap className="w-3 h-3" />
-                      <span>Play Best</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 };
@@ -406,7 +176,10 @@ export const GTOSolverDrawer: React.FC<GTOSolverDrawerProps> = ({
     analysis.rangeMatrix[0][0];
 
   return (
-    <div className="fixed right-3 top-16 bottom-4 w-96 max-w-[94vw] glass-panel rounded-2xl border border-cyan-400/50 bg-slate-950/95 p-4 z-30 pointer-events-auto flex flex-col justify-between shadow-2xl overflow-hidden">
+    <div
+      data-hud-drawer="gto"
+      className="fixed right-3 top-16 bottom-4 w-96 max-w-[94vw] glass-panel rounded-2xl border border-cyan-400/50 bg-slate-950/95 p-4 z-30 pointer-events-auto flex flex-col justify-between shadow-2xl overflow-hidden"
+    >
       {/* Header */}
       <div>
         <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-800">
