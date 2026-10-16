@@ -2412,6 +2412,174 @@ export function populate3DCharacterHeadAndTorso(
   }
 }
 
+let skinPoreNormalCache: THREE.CanvasTexture | null = null;
+let skinPoreRoughnessCache: THREE.CanvasTexture | null = null;
+let hairStrandNormalCache: THREE.CanvasTexture | null = null;
+
+/**
+ * Generates a tileable 512x512 human skin micro-pore and fine epidermal crease tangent-space normal map.
+ */
+export function getSkinPoreNormalMap(): THREE.CanvasTexture {
+  if (skinPoreNormalCache) return skinPoreNormalCache;
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const img = ctx.createImageData(size, size);
+  const hMap = new Float32Array(size * size);
+
+  // Deterministic pseudo-random cellular pore & micro-furrow field
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = (x / size) * Math.PI * 2;
+      const v = (y / size) * Math.PI * 2;
+      const c1 = Math.sin(u * 37 + Math.cos(v * 31)) * Math.cos(v * 41 - Math.sin(u * 29));
+      const c2 = Math.sin(u * 83 + v * 79) * 0.5 + Math.cos(u * 113 - v * 97) * 0.5;
+      const hash = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+      const grain = hash - Math.floor(hash);
+      // Pores are tiny sharp indentations
+      const pore = Math.pow(Math.max(0, c1 * 0.5 + 0.5), 4.0) * -0.65;
+      const furrow = c2 * 0.22 + (grain - 0.5) * 0.18;
+      hMap[y * size + x] = pore + furrow;
+    }
+  }
+
+  const strength = 2.4;
+  for (let y = 0; y < size; y++) {
+    const yPrev = (y - 1 + size) % size;
+    const yNext = (y + 1) % size;
+    for (let x = 0; x < size; x++) {
+      const xPrev = (x - 1 + size) % size;
+      const xNext = (x + 1) % size;
+      const dx = (hMap[y * size + xNext] - hMap[y * size + xPrev]) * strength;
+      const dy = (hMap[yNext * size + x] - hMap[yPrev * size + x]) * strength;
+      const invLen = 1.0 / Math.hypot(dx, dy, 1.0);
+      const nx = (-dx * invLen * 0.5 + 0.5) * 255;
+      const ny = (-dy * invLen * 0.5 + 0.5) * 255;
+      const nz = (invLen * 0.5 + 0.5) * 255;
+      const idx = (y * size + x) * 4;
+      img.data[idx] = nx;
+      img.data[idx + 1] = ny;
+      img.data[idx + 2] = nz;
+      img.data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(14, 14);
+  skinPoreNormalCache = tex;
+  return tex;
+}
+
+/**
+ * Generates a tileable 512x512 skin roughness variation map (breaking up uniform specular reflections).
+ */
+export function getSkinPoreRoughnessMap(): THREE.CanvasTexture {
+  if (skinPoreRoughnessCache) return skinPoreRoughnessCache;
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const img = ctx.createImageData(size, size);
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = (x / size) * Math.PI * 2;
+      const v = (y / size) * Math.PI * 2;
+      const wave = Math.sin(u * 23 + Math.cos(v * 19)) * Math.cos(v * 29 + Math.sin(u * 17));
+      const hash = Math.sin(x * 93.13 + y * 47.71) * 31415.926;
+      const noise = hash - Math.floor(hash);
+      // Roughness multiplier around ~210..248
+      const val = Math.round(218 + wave * 18 + (noise - 0.5) * 22);
+      const idx = (y * size + x) * 4;
+      img.data[idx] = val;
+      img.data[idx + 1] = val;
+      img.data[idx + 2] = val;
+      img.data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(10, 10);
+  skinPoreRoughnessCache = tex;
+  return tex;
+}
+
+/**
+ * Generates a tileable 512x512 anisotropic hair-strand tangent-space normal map.
+ */
+export function getHairStrandNormalMap(): THREE.CanvasTexture {
+  if (hairStrandNormalCache) return hairStrandNormalCache;
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const img = ctx.createImageData(size, size);
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = (x / size) * Math.PI * 2;
+      const v = (y / size) * Math.PI * 2;
+      // High-frequency vertical hair fibers with slight wave
+      const strand =
+        Math.cos(u * 96 + Math.sin(v * 6) * 1.8) * 0.65 +
+        Math.cos(u * 192 - Math.sin(v * 11) * 1.2) * 0.35;
+      const dx = strand * 0.55;
+      const dy = Math.sin(v * 18) * 0.08;
+      const invLen = 1.0 / Math.hypot(dx, dy, 1.0);
+      const idx = (y * size + x) * 4;
+      img.data[idx] = (-dx * invLen * 0.5 + 0.5) * 255;
+      img.data[idx + 1] = (-dy * invLen * 0.5 + 0.5) * 255;
+      img.data[idx + 2] = (invLen * 0.5 + 0.5) * 255;
+      img.data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(6, 6);
+  hairStrandNormalCache = tex;
+  return tex;
+}
+
+/**
+ * Ensures a BufferGeometry has UV coordinates (`uv` attribute) so normal/roughness detail maps
+ * work seamlessly even on vertex-colored anatomical sculptures exported without TEXCOORD_0.
+ */
+export function ensureGeometryUVs(geometry: THREE.BufferGeometry): void {
+  if (geometry.attributes.uv) return;
+  const pos = geometry.attributes.position;
+  if (!pos) return;
+  geometry.computeBoundingBox();
+  const bb = geometry.boundingBox!;
+  const center = new THREE.Vector3();
+  bb.getCenter(center);
+  const size = new THREE.Vector3();
+  bb.getSize(size);
+  const spanY = Math.max(0.05, size.y);
+
+  const uvs = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i) - center.x;
+    const y = pos.getY(i) - bb.min.y;
+    const z = pos.getZ(i) - center.z;
+    const u = Math.atan2(x, z) / (Math.PI * 2) + 0.5;
+    const v = y / spanY;
+    uvs[i * 2] = u;
+    uvs[i * 2 + 1] = v;
+  }
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+}
+
+
 
 
 

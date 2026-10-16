@@ -495,12 +495,12 @@ async function runUxGuidelineHarness() {
     });
     await page.waitForTimeout(450);
 
-    const menuTrigger = page.locator('[data-testid="hud-menu-trigger"]');
+    const menuTrigger = page.locator('[data-testid="hud-settings-trigger"]');
     await menuTrigger.click();
     await page.waitForTimeout(400);
 
     const drawerOpenVerified = await page.evaluate(() => {
-      const drawer = document.querySelector('[data-ux-drawer="unified-settings-drawer"]');
+      const drawer = document.querySelector('[data-hud-drawer="settings"]');
       return !!drawer && drawer.getBoundingClientRect().width > 200;
     });
 

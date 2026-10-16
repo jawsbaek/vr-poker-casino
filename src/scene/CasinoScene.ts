@@ -37,6 +37,10 @@ import {
   createRealisticSkinMaterial,
   buildArticulatedForearmAndHand,
   CharacterModelRole,
+  getSkinPoreNormalMap,
+  getSkinPoreRoughnessMap,
+  getHairStrandNormalMap,
+  ensureGeometryUVs,
 } from './proceduralAssets';
 import { pokerAudio } from '../audio/pokerAudio';
 
@@ -972,9 +976,9 @@ export class CasinoScene {
 
     this.scene.add(dealerGroup);
 
-    // Dedicated VIP Dealer Studio Key/Fill Light (soft warm fill keeping natural facial contouring without plaster washout)
-    const dealerStudioLight = new THREE.PointLight('#fff4e6', 0.20, 1.6, 2.0);
-    dealerStudioLight.position.set(0.05, 0.70, 0.44);
+    // Dedicated VIP Dealer Studio Key/Fill Light (soft warm fill keeping natural facial contouring without washout)
+    const dealerStudioLight = new THREE.PointLight('#fff6eb', 0.34, 1.75, 2.0);
+    dealerStudioLight.position.set(0.05, 0.72, 0.46);
     dealerStudioLight.castShadow = false;
     dealerGroup.add(dealerStudioLight);
 
@@ -982,53 +986,7 @@ export class CasinoScene {
     this.gltfLoader.load(
       '/models/vip_dealer.glb',
       (gltf) => {
-        gltf.scene.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-            const hasColorAttr = Boolean(child.geometry?.attributes?.color);
-            const mats = Array.isArray(child.material) ? child.material : [child.material];
-            for (const m of mats) {
-              if (
-                m &&
-                (m instanceof THREE.MeshStandardMaterial ||
-                  m instanceof THREE.MeshPhysicalMaterial)
-              ) {
-                if (hasColorAttr) {
-                  m.vertexColors = true;
-                }
-                const matName = m.name.toLowerCase();
-                if (!m.userData.calibrated) {
-                  m.userData.calibrated = true;
-                  if (matName.includes('skin')) {
-                    // Attenuate over-bright linear vertex/base skin color (0.80 linear -> ~0.41 linear warm human skin)
-                    m.color.multiply(new THREE.Color(0.52, 0.44, 0.40));
-                    m.roughness = 0.64;
-                    m.metalness = 0.0;
-                    m.envMapIntensity = 0.22;
-                    if (m instanceof THREE.MeshPhysicalMaterial) {
-                      m.clearcoat = 0.03;
-                      m.clearcoatRoughness = 0.65;
-                    }
-                  } else if (matName.includes('shirt')) {
-                    m.color.multiplyScalar(0.60);
-                    m.roughness = 0.82;
-                    m.envMapIntensity = 0.25;
-                  } else if (matName.includes('eye')) {
-                    m.color.multiplyScalar(0.65);
-                    m.roughness = 0.08;
-                    m.envMapIntensity = 0.35;
-                    if (m instanceof THREE.MeshPhysicalMaterial) {
-                      m.clearcoat = 0.65;
-                      m.clearcoatRoughness = 0.05;
-                    }
-                  }
-                }
-                m.needsUpdate = true;
-              }
-            }
-          }
-        });
+        this.upgradeCharacterGLBMaterials(gltf.scene);
 
         const torsoNode = gltf.scene.getObjectByName('Dealer_Torso');
         const headNode = gltf.scene.getObjectByName('Dealer_Head');
@@ -1280,8 +1238,8 @@ export class CasinoScene {
         rightArmGroup.add(phoneHandGroup);
 
         // Subtle smartphone screen soft glow illuminating Bao's face gently without washout
-        phoneGlowLight = new THREE.PointLight('#38bdf8', 0.14, 0.65, 2.0);
-        phoneGlowLight.position.set(0, 0.42, 0.26);
+        phoneGlowLight = new THREE.PointLight('#38bdf8', 0.08, 0.55, 2.0);
+        phoneGlowLight.position.set(0, 0.50, 0.34);
         torsoGroup.add(phoneGlowLight);
 
         // Phone placed flat on the walnut racetrack when Bao gets a monster hand ("phone_down_monster" tell!)
@@ -1385,10 +1343,10 @@ export class CasinoScene {
       this.avatarPlaques.set(seatIdx, plaqueRefObj);
     }
 
-    // Add subtle warm facial fill lights for each AI seat so skin tones remain rich and organic without glare
+    // Add warm facial key lights for each AI seat so skin tones and micro-pore highlights look natural and alive
     this.avatarPlaques.forEach((plaqueRef) => {
-      const seatKeyLight = new THREE.PointLight('#fff4e6', 0.16, 1.25, 2.0);
-      seatKeyLight.position.set(0.04, 0.64, 0.36);
+      const seatKeyLight = new THREE.PointLight('#fff6eb', 0.34, 1.45, 2.0);
+      seatKeyLight.position.set(0.04, 0.66, 0.40);
       seatKeyLight.castShadow = false;
       plaqueRef.avatarGroup.add(seatKeyLight);
     });
@@ -1397,53 +1355,7 @@ export class CasinoScene {
     this.gltfLoader.load(
       '/models/vip_ai_players.glb',
       (gltf) => {
-        gltf.scene.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-            const hasColorAttr = Boolean(child.geometry?.attributes?.color);
-            const mats = Array.isArray(child.material) ? child.material : [child.material];
-            for (const m of mats) {
-              if (
-                m &&
-                (m instanceof THREE.MeshStandardMaterial ||
-                  m instanceof THREE.MeshPhysicalMaterial)
-              ) {
-                if (hasColorAttr) {
-                  m.vertexColors = true;
-                }
-                const matName = m.name.toLowerCase();
-                if (!m.userData.calibrated) {
-                  m.userData.calibrated = true;
-                  if (matName.includes('skin')) {
-                    // Attenuate over-bright linear vertex/base skin color (0.80 linear -> ~0.41 linear warm human skin)
-                    m.color.multiply(new THREE.Color(0.52, 0.44, 0.40));
-                    m.roughness = 0.64;
-                    m.metalness = 0.0;
-                    m.envMapIntensity = 0.22;
-                    if (m instanceof THREE.MeshPhysicalMaterial) {
-                      m.clearcoat = 0.03;
-                      m.clearcoatRoughness = 0.65;
-                    }
-                  } else if (matName.includes('shirt')) {
-                    m.color.multiplyScalar(0.60);
-                    m.roughness = 0.82;
-                    m.envMapIntensity = 0.25;
-                  } else if (matName.includes('eye')) {
-                    m.color.multiplyScalar(0.65);
-                    m.roughness = 0.08;
-                    m.envMapIntensity = 0.35;
-                    if (m instanceof THREE.MeshPhysicalMaterial) {
-                      m.clearcoat = 0.65;
-                      m.clearcoatRoughness = 0.05;
-                    }
-                  }
-                }
-                m.needsUpdate = true;
-              }
-            }
-          }
-        });
+        this.upgradeCharacterGLBMaterials(gltf.scene);
 
         avatarMeshSlots.forEach((slots) => {
           const torsoNode = gltf.scene.getObjectByName(`${slots.rolePrefix}_Torso`);
@@ -1474,6 +1386,147 @@ export class CasinoScene {
         console.warn('[CasinoScene] Failed to load /models/vip_ai_players.glb, keeping fallback:', err);
       }
     );
+  }
+
+  /**
+   * Upgrades loaded Blender 5.2 human character meshes (Dealer, Viktor, Elena, Bao, Marcus)
+   * to `THREE.MeshPhysicalMaterial` with:
+   *  - Procedural micro-skin pore normal & roughness maps + cylindrical/triplanar UV generation
+   *  - Warm subsurface dermis sheen (`sheenColor = #ffbfa0`) and subtle lipid clearcoat
+   *  - Balanced face vs. rail-hand luminance (preventing linear-RGB double-darkening)
+   *  - Procedural hair-strand anisotropic normals and wet-cornea eye reflections
+   */
+  private upgradeCharacterGLBMaterials(root: THREE.Object3D) {
+    const skinNormalMap = getSkinPoreNormalMap();
+    const skinRoughnessMap = getSkinPoreRoughnessMap();
+    const hairNormalMap = getHairStrandNormalMap();
+    const upgradedCache = new Map<THREE.Material, THREE.Material>();
+
+    root.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      child.castShadow = true;
+      child.receiveShadow = true;
+
+      if (child.geometry) {
+        ensureGeometryUVs(child.geometry);
+      }
+
+      const hasColorAttr = Boolean(child.geometry?.attributes?.color);
+      const isArray = Array.isArray(child.material);
+      const mats: THREE.Material[] = isArray ? child.material : [child.material];
+
+      const newMats = mats.map((m) => {
+        if (
+          !m ||
+          !(
+            m instanceof THREE.MeshStandardMaterial ||
+            m instanceof THREE.MeshPhysicalMaterial
+          )
+        ) {
+          return m;
+        }
+
+        const cached = upgradedCache.get(m);
+        if (cached) return cached;
+
+        const matName = m.name.toLowerCase();
+        const isSkin = matName.includes('skin');
+        const isHandSkin = matName.includes('hand');
+        const isHair =
+          matName.includes('hair') ||
+          matName.includes('beard') ||
+          matName.includes('brow');
+        const isEye = matName.includes('eye') && !matName.includes('brow');
+        const isGlassesLens = matName.includes('lens');
+        const isVelvetOrSilk =
+          matName.includes('gown') ||
+          matName.includes('velvet') ||
+          matName.includes('vest') ||
+          matName.includes('suit') ||
+          matName.includes('blazer') ||
+          matName.includes('bomber') ||
+          matName.includes('tie') ||
+          matName.includes('square');
+
+        const phys = new THREE.MeshPhysicalMaterial({
+          name: m.name,
+          color: m.color.clone(),
+          map: m.map,
+          roughness: m.roughness,
+          metalness: m.metalness,
+          emissive: m.emissive.clone(),
+          emissiveIntensity: m.emissiveIntensity,
+          transparent: m.transparent,
+          opacity: m.opacity,
+          side: m.side,
+          vertexColors: hasColorAttr || m.vertexColors,
+        });
+
+        if (isSkin) {
+          if (isHandSkin) {
+            // Hands rest forward on the walnut rail right inside the bright table spotlight cone (intensity 4.8)
+            phys.color.multiply(new THREE.Color(0.58, 0.54, 0.52));
+          } else {
+            // Head/neck vertex colors in GLB are already in linear RGB; keep natural warm brightness without double-darkening
+            phys.color.multiply(new THREE.Color(0.86, 0.82, 0.80));
+          }
+          phys.roughness = 0.54;
+          phys.metalness = 0.0;
+          phys.normalMap = skinNormalMap;
+          phys.normalScale.set(0.18, 0.18);
+          phys.roughnessMap = skinRoughnessMap;
+          // Subsurface dermis scatter approximation + natural skin lipid micro-sheen
+          phys.sheen = 0.28;
+          phys.sheenRoughness = 0.48;
+          phys.sheenColor.set('#ffbfa0');
+          phys.clearcoat = 0.05;
+          phys.clearcoatRoughness = 0.52;
+          phys.envMapIntensity = 0.34;
+        } else if (isHair) {
+          phys.roughness = 0.44;
+          phys.metalness = 0.04;
+          phys.normalMap = hairNormalMap;
+          phys.normalScale.set(0.32, 0.32);
+          phys.sheen = 0.38;
+          phys.sheenRoughness = 0.35;
+          phys.sheenColor.copy(phys.color).lerp(new THREE.Color('#fff5e6'), 0.35);
+          phys.clearcoat = 0.12;
+          phys.clearcoatRoughness = 0.38;
+          phys.envMapIntensity = 0.38;
+        } else if (isEye) {
+          // Wet tear-film cornea with crisp specular highlights
+          phys.color.multiplyScalar(0.88);
+          phys.roughness = 0.04;
+          phys.metalness = 0.0;
+          phys.clearcoat = 1.0;
+          phys.clearcoatRoughness = 0.02;
+          phys.ior = 1.376;
+          phys.envMapIntensity = 0.75;
+        } else if (isGlassesLens) {
+          phys.roughness = 0.06;
+          phys.clearcoat = 0.9;
+          phys.clearcoatRoughness = 0.04;
+          phys.envMapIntensity = 0.65;
+        } else if (matName.includes('shirt')) {
+          phys.color.multiplyScalar(0.62);
+          phys.roughness = 0.78;
+          phys.sheen = 0.18;
+          phys.sheenRoughness = 0.65;
+          phys.envMapIntensity = 0.25;
+        } else if (isVelvetOrSilk) {
+          phys.sheen = 0.32;
+          phys.sheenRoughness = 0.52;
+          phys.sheenColor.copy(phys.color).lerp(new THREE.Color('#ffffff'), 0.22);
+          phys.envMapIntensity = 0.32;
+        }
+
+        phys.needsUpdate = true;
+        upgradedCache.set(m, phys);
+        return phys;
+      });
+
+      child.material = isArray ? newMats : newMats[0];
+    });
   }
 
   /**
@@ -1968,7 +2021,7 @@ export class CasinoScene {
           plaqueRef.phoneRailMesh.visible = !watching && !p.eliminated;
         }
         if (plaqueRef.phoneGlowLight) {
-          plaqueRef.phoneGlowLight.intensity = watching ? 0.14 : 0;
+          plaqueRef.phoneGlowLight.intensity = watching ? 0.08 : 0;
         }
       }
 
