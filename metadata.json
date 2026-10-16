@@ -1,0 +1,8 @@
+{
+  "name": "VR Poker Casino",
+  "description": "Realistic WebXR Texas Hold'em Poker Casino with GTO analysis, AI opponents with behavioral tells, spatial 3D poker table, and luxury VIP suite atmosphere.",
+  "prompt": "Realistic VR Poker Casino (WebXR)",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

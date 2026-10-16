@@ -44,7 +44,7 @@ export default defineConfig({
     },
   ],
   server: {
-    host: true, // Listen on all network addresses (allows local network access for WebXR testing)
-    port: 5173,
+    host: '0.0.0.0',
+    port: 3000,
   },
 });
