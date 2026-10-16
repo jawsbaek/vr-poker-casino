@@ -95,7 +95,7 @@ export const CompactGTOPill: React.FC<CompactGTOPillProps> = ({
       data-ux-component="gto-telemetry-strip"
       onClick={onOpenFullDrawer}
       className="cursor-pointer rounded-xl border border-[#d4af37]/35 bg-[#090c12]/92 px-3 py-1.5 shadow-xl transition-all hover:border-[#d4af37]/70"
-      title="Click to open 13×13 GTO Range Matrix & Detailed Solver"
+      title="Open the full solver"
     >
       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
         <div className="flex flex-wrap items-center gap-2">
@@ -119,7 +119,7 @@ export const CompactGTOPill: React.FC<CompactGTOPillProps> = ({
           {!cardsVisible ? (
             <span className="inline-flex items-center gap-1 text-[#94a3b8] text-[10px]">
               <Lock className="w-3 h-3 text-[#d4af37]" />
-              <span>Hold Peek to view real-time equity & optimal frequencies</span>
+              <span>Hold Peek to see equity</span>
             </span>
           ) : (
             <>
@@ -186,7 +186,7 @@ export const GTOSolverDrawer: React.FC<GTOSolverDrawerProps> = ({
           <div className="flex items-center gap-2">
             <Brain className="w-4 h-4 text-cyan-400" />
             <span className="text-xs font-black uppercase tracking-wider text-cyan-300">
-              GTO Solver & 13×13 Range Matrix
+              GTO solver (13×13)
             </span>
           </div>
           <button
@@ -469,7 +469,7 @@ export const GTOSolverDrawer: React.FC<GTOSolverDrawerProps> = ({
               </div>
             ) : (
               <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 text-center text-slate-400">
-                Hold <strong>Peek (Space)</strong> or <strong>Lock Peek</strong> to compare Pure GTO vs. Tell-Locked Exploit EVs for your hole cards.
+                Hold <strong>Peek (Space)</strong> or use <strong>Lock Peek</strong> to compare GTO and exploit EV.
               </div>
             )}
 
@@ -535,7 +535,7 @@ export const GTOSolverDrawer: React.FC<GTOSolverDrawerProps> = ({
               </div>
               {decisionHistory.length === 0 ? (
                 <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 text-center text-slate-400">
-                  Play a street to see your live GTO decision grades and EV loss analysis.
+                  Play a street to see your grades.
                 </div>
               ) : (
                 decisionHistory
@@ -582,7 +582,7 @@ export const GTOSolverDrawer: React.FC<GTOSolverDrawerProps> = ({
 
       {/* Footer Solver Mode Switch */}
       <div className="pt-2.5 mt-2 border-t border-slate-800 flex items-center justify-between text-[11px]">
-        <span className="text-slate-400">Active Grader Mode:</span>
+        <span className="text-slate-400">Grading mode:</span>
         <div className="flex gap-1">
           <button
             onClick={() => onChangeSolverMode('exploit')}

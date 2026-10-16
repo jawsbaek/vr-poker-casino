@@ -164,16 +164,16 @@ export function getSeatPosition(
     if (relIdx === 0) return { position: 'BTN', description: 'Button' };
     if (relIdx === 1) return { position: 'SB', description: 'Small Blind' };
     if (relIdx === 2) return { position: 'BB', description: 'Big Blind' };
-    return { position: 'CO', description: 'Cutoff (First to Act)' };
+    return { position: 'CO', description: 'Cutoff (first to act)' };
   }
 
   // Full 5-Max Table
   switch (relIdx) {
-    case 0: return { position: 'BTN', description: 'Button (Dealer • Best Position)' };
-    case 1: return { position: 'SB', description: 'Small Blind (Out of Position)' };
-    case 2: return { position: 'BB', description: 'Big Blind (Closes Preflop Action)' };
-    case 3: return { position: 'UTG', description: 'Under the Gun (HJ/UTG • Tightest Range)' };
-    default: return { position: 'CO', description: 'Cutoff (Late Position)' };
+    case 0: return { position: 'BTN', description: 'Button (best position)' };
+    case 1: return { position: 'SB', description: 'Small Blind (out of position)' };
+    case 2: return { position: 'BB', description: 'Big Blind (closes preflop action)' };
+    case 3: return { position: 'UTG', description: 'Under the Gun (tightest range)' };
+    default: return { position: 'CO', description: 'Cutoff (late position)' };
   }
 }
 
@@ -740,12 +740,12 @@ function buildRecommendation(params: {
       allin = 78;
       raiseSmall = 12;
       checkCall = 10;
-      reasoning = `Short-stack (${effectiveStackBB.toFixed(1)} BB) Nash Push/Fold spot: shoving Top ${pushThresholdPct}% from ${position} maximizes fold equity and ICM pressure.`;
+      reasoning = `Short stack (${effectiveStackBB.toFixed(1)} BB): shove the top ${pushThresholdPct}% from ${position}.`;
     } else {
       fold = isFreeToCheck ? 0 : 85;
       checkCall = isFreeToCheck ? 90 : 10;
       allin = 5;
-      reasoning = `Short-stack (${effectiveStackBB.toFixed(1)} BB): hand (${equityPct}% eq) is below Nash shove threshold from ${position}. Preserve stack for better spots.`;
+      reasoning = `Short stack (${effectiveStackBB.toFixed(1)} BB): ${equityPct}% equity is too weak to shove from ${position}. Wait for a better spot.`;
     }
   } else if (mode === 'exploit' && villain?.activeTell === 'phone_down_monster') {
     // Node-Locked Exploit against Bao's Phone-Down Monster Tell!
@@ -753,16 +753,16 @@ function buildRecommendation(params: {
       raiseBig = 60;
       allin = 25;
       checkCall = 15;
-      reasoning = `🔥 Tell Lock: Bao put his phone down (Top 12% Monster Range), but your nutted hand still holds ${equityPct}% equity—pile in max value!`;
+      reasoning = `Bao put his phone down (top 12%), but you still have ${equityPct}% equity. Bet for value.`;
     } else if (!isFreeToCheck && equityPct < potOddsPct + 6) {
       fold = 88;
       checkCall = 12;
-      reasoning = `🔥 Tell Lock: Bao locked his phone and leaned in (Top 12% Two-Pair+ range). Your equity drops to ${equityPct}% vs ${potOddsPct}% pot odds—Exploit makes a disciplined fold!`;
+      reasoning = `Bao put his phone down (two pair or better). ${equityPct}% equity vs ${potOddsPct}% pot odds: fold.`;
     } else {
       checkCall = 78;
       raiseSmall = 12;
       fold = isFreeToCheck ? 0 : 10;
-      reasoning = `🔥 Tell Lock: Bao's phone is down on the rail (Monster range). Keep the pot controlled and avoid bluffing into his range.`;
+      reasoning = `Bao's phone is down. Keep the pot small and don't bluff.`;
     }
   } else if (mode === 'exploit' && villain?.activeTell === 'chip_fidget_bluff') {
     // Node-Locked Exploit against Marcus's Chip Fidget Bluff Tell!
@@ -770,12 +770,12 @@ function buildRecommendation(params: {
       checkCall = isFreeToCheck ? 35 : 68;
       raiseSmall = 22;
       raiseBig = 10;
-      reasoning = `🎲 Tell Lock: Marcus is restlessly fidgeting with his chips (~65% bluff range). Your ${equityPct}% equity crushes his bluffs—call down wide or trap!`;
+      reasoning = `Marcus is fidgeting (about 65% bluffs). With ${equityPct}% equity, call down or trap.`;
     } else {
       checkCall = isFreeToCheck ? 75 : 40;
       raiseBig = 35;
       fold = isFreeToCheck ? 0 : 25;
-      reasoning = `🎲 Tell Lock: Marcus's chip fidget signals weakness. Apply counter-pressure or bluff-catch profitably.`;
+      reasoning = `Marcus's fidget means weakness. Raise or bluff-catch.`;
     }
   } else if (mode === 'exploit' && villain?.persona === 'heavy_phone' && villain.isWatchingPhone) {
     // Node-Locked Exploit against Distracted Calling Station Bao!
@@ -783,16 +783,16 @@ function buildRecommendation(params: {
       raiseBig = 68;
       raiseSmall = 22;
       checkCall = 10;
-      reasoning = `📱 Station Exploit: Bao is scrolling his phone (58% VPIP calling station). Size up to ${bigLabel} ($${bigRaiseTotal}) for relentless thin value!`;
+      reasoning = `Bao is scrolling and calls too much. Bet ${bigLabel} ($${bigRaiseTotal}) for value.`;
     } else if (outs.totalOuts >= 8) {
       checkCall = 76;
       raiseSmall = 18;
       fold = isFreeToCheck ? 0 : 6;
-      reasoning = `📱 Station Exploit: Bao rarely folds while scrolling, so semi-bluffing loses fold equity. Take the cheap card with your ${outs.totalOuts} outs (${outs.byRiverHitPct}% hit).`;
+      reasoning = `Bao won't fold while scrolling, so don't semi-bluff. Take the cheap card (${outs.totalOuts} outs, ${outs.byRiverHitPct}% to hit).`;
     } else {
       fold = isFreeToCheck ? 0 : 82;
       checkCall = isFreeToCheck ? 92 : 18;
-      reasoning = `📱 Station Exploit: Never bluff a distracted calling station with ${equityPct}% equity. Check/fold and wait for value.`;
+      reasoning = `Don't bluff Bao with ${equityPct}% equity. Check/fold.`;
     }
   } else {
     // Standard Pure GTO / Balanced Solver Logic
@@ -802,31 +802,31 @@ function buildRecommendation(params: {
       raiseSmall = 30;
       checkCall = 12;
       allin = effectiveStackBB <= 18 ? 6 : 6;
-      reasoning = `Strong equity advantage (${equityPct}% vs ${potOddsPct}% pot odds) from ${position}. Build the pot across balanced ${smallLabel} and ${bigLabel} sizings.`;
+      reasoning = `${equityPct}% equity vs ${potOddsPct}% pot odds from ${position}. Mix ${smallLabel} and ${bigLabel} bets.`;
     } else if (equityPct >= 54) {
       raiseSmall = 48;
       checkCall = 38;
       raiseBig = 14;
-      reasoning = `Positive EV spot (${equityPct}% equity). GTO mixes ${smallLabel} continuation/value bets with ${checkCall}% check/call for range protection.`;
+      reasoning = `${equityPct}% equity. Mix ${smallLabel} bets with ${checkCall}% check/call.`;
     } else if (outs.totalOuts >= 8 && equityMargin >= -6) {
       checkCall = 58;
       raiseSmall = 32;
       fold = isFreeToCheck ? 0 : 10;
-      reasoning = `High-equity draw (${outs.totalOuts} outs • ${outs.byRiverHitPct}% by river). Profitable continue via ${checkCall}% Call and ${raiseSmall}% semi-bluff raise.`;
+      reasoning = `Strong draw (${outs.totalOuts} outs, ${outs.byRiverHitPct}% by the river). Call ${checkCall}%, raise ${raiseSmall}%.`;
     } else if (isFreeToCheck) {
       checkCall = 82;
       raiseSmall = 18;
-      reasoning = `Free to check with ${equityPct}% equity from ${position}. Realize your equity for free and re-evaluate on the next street.`;
+      reasoning = `${equityPct}% equity from ${position}. Check and see a free card.`;
     } else if (equityMargin >= 2) {
       checkCall = 72;
       raiseSmall = 14;
       fold = 14;
-      reasoning = `Direct pot odds call: your ${equityPct}% equity exceeds the ${potOddsPct}% required equity ($${callAmount} into $${table.pot}).`;
+      reasoning = `${equityPct}% equity beats the ${potOddsPct}% you need ($${callAmount} into $${table.pot}). Call.`;
     } else {
       fold = 80;
       checkCall = 15;
       raiseSmall = 5;
-      reasoning = `Negative EV defend: calling $${callAmount} requires ${potOddsPct}% equity, but your hand only holds ${equityPct}% equity.`;
+      reasoning = `Calling $${callAmount} needs ${potOddsPct}% equity. You have ${equityPct}%.`;
     }
   }
 
@@ -1114,44 +1114,44 @@ export function computeGTOAnalysis(
 
     if (villain.activeTell === 'phone_down_monster') {
       exploitRangeWidthPct = 12;
-      tellLockTitle = '🔥 Tell Lock: Bao Put Phone Down!';
+      tellLockTitle = 'Tell lock: Bao put his phone down';
       tellLockImpact =
-        'Range locked to Top 12% Monster Value (Two Pair+, Sets, Overpairs). Bluffing = 0% EV.';
+        'Top 12% range (two pair or better). Don\'t bluff.';
     } else if (villain.activeTell === 'chip_fidget_bluff') {
       exploitRangeWidthPct = 66;
-      tellLockTitle = '🎲 Tell Lock: Marcus Chip-Fidget Bluff!';
+      tellLockTitle = 'Tell lock: Marcus is fidgeting with his chips';
       tellLockImpact =
-        'Range heavily polarized toward air/bluffs (~65% bluff freq). Call down wide & trap!';
+        'About 65% bluffs. Call wide or trap.';
     } else if (villain.activeTell === 'posture_tight') {
       exploitRangeWidthPct = 8;
-      tellLockTitle = '✨ Tell Lock: Elena Poised (Nutted Range)';
+      tellLockTitle = 'Tell lock: Elena tightened up (nutted range)';
       tellLockImpact =
-        'Range locked to Top 8% premium holdings (QQ+, AK, Sets/Flushes). Fold medium pairs!';
+        'Top 8% range (QQ+, AK, sets, flushes). Fold medium pairs.';
     } else if (villain.activeTell === 'watch_glance_strong') {
       exploitRangeWidthPct = 15;
-      tellLockTitle = '⌚ Tell Lock: Viktor Checked Watch';
+      tellLockTitle = 'Tell lock: Viktor checked his watch';
       tellLockImpact =
-        'Range narrowed to Top 15% strong value hands. Respect his sizing and tighten calls.';
+        'Top 15% range. Call less.';
     } else if (villain.persona === 'heavy_phone') {
       exploitRangeWidthPct = 58;
-      tellLockTitle = '📱 Archetype Lock: Distracted Calling Station';
+      tellLockTitle = 'Archetype lock: distracted calling station';
       tellLockImpact =
-        'Plays 58% VPIP while scrolling; calls down with weak pairs. Cut bluffs & value-bet big!';
+        '58% VPIP, calls with weak pairs. Don\'t bluff; value-bet big.';
     } else if (villain.persona === 'flashy_maniac') {
       exploitRangeWidthPct = 52;
-      tellLockTitle = '🕶️ Archetype Lock: High-Variance Maniac';
+      tellLockTitle = 'Archetype lock: high-variance maniac';
       tellLockImpact =
-        'Plays 52% VPIP / 38% PFR. Widen your value 3-bets and bluff-catching threshold.';
+        '52% VPIP / 38% PFR. 3-bet wider and bluff-catch more.';
     } else if (villain.persona === 'woman') {
       exploitRangeWidthPct = 16;
-      tellLockTitle = '🥂 Archetype Lock: Tight-Passive Rock';
+      tellLockTitle = 'Archetype lock: tight-passive rock';
       tellLockImpact =
-        'Plays 16% VPIP; over-folds without top pair+. Attack her blinds & C-bet relentlessly.';
+        '16% VPIP, folds without top pair. Steal her blinds and c-bet often.';
     } else {
       exploitRangeWidthPct = 26;
-      tellLockTitle = '⌚ Archetype Lock: Balanced TAG Shark';
+      tellLockTitle = 'Archetype lock: balanced TAG shark';
       tellLockImpact =
-        'Plays balanced 26% VPIP / 21% PFR. Pure GTO frequencies are optimal against Viktor.';
+        '26% VPIP / 21% PFR, balanced. Play standard GTO.';
     }
   }
 
@@ -1316,13 +1316,13 @@ export function gradePlayerDecision(
 
   let coachingNote = '';
   if (grade === 'best') {
-    coachingNote = `Optimal ${activeMode === 'exploit' ? 'Exploit' : 'GTO'} line! ${rec.reasoning}`;
+    coachingNote = `Best ${activeMode === 'exploit' ? 'Exploit' : 'GTO'} line. ${rec.reasoning}`;
   } else if (grade === 'good') {
-    coachingNote = `Viable mixed-strategy play (${Math.round(chosenFreq)}% freq). Solver slightly prefers ${rec.bestActionLabel} (+${optimalEvBB.toFixed(2)} BB).`;
+    coachingNote = `Fine (${Math.round(chosenFreq)}% mix). Slightly better: ${rec.bestActionLabel} (+${optimalEvBB.toFixed(2)} BB).`;
   } else if (grade === 'inaccuracy') {
-    coachingNote = `Inaccuracy (-${evLossBB.toFixed(2)} BB EV loss): Solver prefers ${rec.bestActionLabel}. ${rec.reasoning}`;
+    coachingNote = `Inaccuracy (-${evLossBB.toFixed(2)} BB): ${rec.bestActionLabel} is better. ${rec.reasoning}`;
   } else {
-    coachingNote = `Mathematical Blunder (-${evLossBB.toFixed(2)} BB EV loss): ${chosenActionLabel} burns EV with ${equityPct}% equity vs ${analysis.potOddsPct}% pot odds. Optimal: ${rec.bestActionLabel}.`;
+    coachingNote = `Blunder (-${evLossBB.toFixed(2)} BB): ${equityPct}% equity vs ${analysis.potOddsPct}% pot odds. Play ${rec.bestActionLabel}.`;
   }
 
   return {

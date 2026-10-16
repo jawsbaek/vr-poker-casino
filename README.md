@@ -1,52 +1,55 @@
-# Monte Carlo VIP 3D / WebXR Poker Casino ♠️♥️♣️♦️
+# Monte Carlo VIP 3D / WebXR Poker Casino
 
-**Live Google Cloud Run Deployment:** [https://vr-poker-casino-668276194475.asia-northeast3.run.app](https://vr-poker-casino-668276194475.asia-northeast3.run.app)  
-**Team Name:** Jawsbar (`Sanghoon Baek`)  
-**Repository:** [https://github.com/jawsbaek/vr-poker-casino](https://github.com/jawsbaek/vr-poker-casino)
+Live deployment on Google Cloud Run: [https://vr-poker-casino-668276194475.asia-northeast3.run.app](https://vr-poker-casino-668276194475.asia-northeast3.run.app)  
+Team: Jawsbar (`Sanghoon Baek`)  
+Repository: [https://github.com/jawsbaek/vr-poker-casino](https://github.com/jawsbaek/vr-poker-casino)
 
----
+## 1. Overview
 
-## 1. Executive Summary
+Monte Carlo VIP is a 3D Texas Hold'em No-Limit 5-Max Sit & Go played at a private high-roller table. It is built with Three.js, WebXR (hand tracking on Apple Vision Pro and Meta Quest), React 18, TypeScript, procedural 3D assets from Blender 5.2, and the Gemini media models through `@google/genai`. It runs on Google Cloud Run.
 
-**Monte Carlo VIP 3D / WebXR Poker Casino** is an immersive, spatial 3D Texas Hold'em No-Limit 5-Max Sit & Go championship built with **Three.js, WebXR (Apple Vision Pro & Meta Quest hand-tracking ready), React 18, TypeScript, Blender 5.2 procedural 3D assets, and the Google Gemini Multimodal Media Pipeline (`@google/genai`)** deployed on **Google Cloud Run**.
+Most online poker is a flat 2D table with no one sitting at it. Here you sit with four 3D opponents and can read their body language:
 
-Unlike flat 2D online poker tables that strip away human psychology and physical table presence, our project recreates the tactile tension of a private Monte Carlo high-roller suite:
-- **Live Physical & Behavioral AI Tells:** Read articulated 3D opponents around the mahogany rail—most notably **Bao (Seat #3)**, who hunches over a glowing smartphone scrolling short-form videos (complete with cyan screen reflections on his face and tinny phone-speaker audio bleed) when holding weak/marginal cards, but **locks his phone and places it flat on the mahogany rail (`🔥 Phone Down!`)** when holding a monster hand.
-- **Multimodal Gemini AI + Zero-Latency Procedural Audio Fallback:** Integrates **Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)** for persona-matched Dealer & AI player voice banter, **Lyria 3 (`lyria-3-clip-preview`)** for adaptive Lounge Jazz $\leftrightarrow$ High-Stakes Tension soundtracks, and **Nano Banana (`gemini-3.1-flash-image`)** for VIP character portraits—backed by a deterministic WebAudio & canvas procedural synthesizer so the table runs at **60–90 FPS with zero latency** even without an external API key.
-- **Real-Time 169-Hand GTO Solver & Node-Locked Exploitative Coach:** Computes live Monte Carlo equity, Pot Odds, Stack-to-Pot Ratio (SPR), and a full $13 \times 13$ starting-hand range matrix, dynamically shifting between **Pure Nash Equilibrium (`pure_gto`)** and **Node-Locked Exploitative (`exploit`)** recommendations based on opponents' VPIP/PFR/AF HUD stats and physical tells.
-- **Sightline-Safe Spatial UX & Automated 3D Dogfooding Harness:** Engineered around an outer-edge monochrome Obsidian & Champagne Gold HUD that guarantees **0% occlusion** of the 3D Dealer, AI avatars, and community board, verified automatically via headless GPU Playwright spatial bounding-box audits (`npm run dogfood` & `npm run verify:ux`).
+- Opponents give physical tells. Bao (Seat #3) hunches over his phone scrolling short videos when his cards are weak or marginal; the screen throws cyan light on his face and you can hear the tinny speaker. When he has a monster hand he locks the phone and lays it flat on the mahogany rail (`🔥 Phone Down!`).
+- Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`) voices the dealer and the AI players, Lyria 3 (`lyria-3-clip-preview`) switches the soundtrack between lounge jazz and high-stakes tension, and Nano Banana (`gemini-3.1-flash-image`) draws the character portraits. Without an API key, a WebAudio and canvas synthesizer takes over, and the table still runs at 60 to 90 FPS.
+- A GTO solver computes Monte Carlo equity, pot odds, stack-to-pot ratio (SPR) and a full $13 \times 13$ starting-hand matrix. It recommends either pure Nash equilibrium play (`pure_gto`) or a node-locked exploit (`exploit`), based on each opponent's VPIP/PFR/AF stats and physical tells.
+- The HUD is obsidian and champagne gold and sits at the screen edges, so it never covers the dealer, the AI players or the board. Headless GPU Playwright runs check this with bounding-box audits (`npm run dogfood` and `npm run verify:ux`).
 
----
+## 2. Features
 
-## 2. Key Innovations
+### AI opponents and their tells
 
-### 🎭 1. Articulated 3D AI Personas & Physical Behavioral Tells
-Four distinct AI archetypes sit outside the mahogany armrest rim with custom Blender-generated `.glb` meshes (`vip_dealer.glb`, `vip_ai_players.glb`, `vip_cards_and_chips.glb`, `vip_poker_table.glb`) and `.usdz` Apple Vision Pro AR QuickLook support:
-| Seat | Persona | Archetype | Signature Prop & Physical Behavioral Tell |
+Four AI players sit outside the mahogany armrest, alongside the dealer. Their meshes are generated in Blender (`vip_dealer.glb`, `vip_ai_players.glb`, `vip_cards_and_chips.glb`, `vip_poker_table.glb`), and a `.usdz` export supports AR Quick Look on Apple Vision Pro.
+
+| Seat | Persona | Archetype | Prop and tell |
 | :--- | :--- | :--- | :--- |
-| **Dealer** | **VIP Croupier** | Professional | Gold silk bow-tie, double-taps the emerald felt before burning & dealing Flop/Turn/River |
-| **Seat #1** | **Viktor** | Tight-Aggressive Shark | Glances at his gold wristwatch (`⌚ Checks Watch`) when holding high-equity value hands |
-| **Seat #2** | **Elena** | Ultra-Tight Rock | Sits upright & poised (`✨ Poised`) with crystal champagne flute when entering a pot strong |
-| **Seat #3** | **Bao** | Loose-Passive Calling Station | Scrolls glowing smartphone (`📱 Scrolling`) with tinny audio leak on weak/medium hands; **places phone flat on rail (`🔥 Phone Down!`)** on monster hands |
-| **Seat #4** | **Marcus** | Loose-Aggressive Maniac | Restlessly fidgets with his clay chip stack (`🎲 Chip Fidget`) when executing high-variance bluffs |
+| Dealer | VIP Croupier | Professional | Gold silk bow tie; double-taps the felt before burning and dealing the flop, turn and river |
+| Seat #1 | Viktor | Tight-aggressive shark | Glances at his gold wristwatch (`⌚ Checks Watch`) with high-equity value hands |
+| Seat #2 | Elena | Ultra-tight rock | Sits upright with a champagne flute (`✨ Poised`) when she enters a pot strong |
+| Seat #3 | Bao | Loose-passive calling station | Scrolls his phone (`📱 Scrolling`) with audible speaker leak on weak and medium hands; lays it flat on the rail (`🔥 Phone Down!`) on monster hands |
+| Seat #4 | Marcus | Loose-aggressive maniac | Fidgets with his chip stack (`🎲 Chip Fidget`) when he runs a high-variance bluff |
 
-### 🧠 2. Real-Time $13 \times 13$ GTO Solver & Exploitative Node-Locking
-- **Interactive 169-Hand Grid:** Visualizes Raise / Call / Fold mixing frequencies across all 169 starting hand combinations (`AA` through `72o`).
-- **Node-Locked Exploitative Engine:** Automatically incorporates live opponent behavioral tells (such as Bao's `phone_down_monster` tell or Marcus's `chip_fidget_bluff` tell) and HUD metrics (`VPIP`, `PFR`, `3-Bet`, `AF`) to compute expected value ($\text{EV}$) deltas and post-decision accuracy grading.
+### $13 \times 13$ GTO solver with node locking
 
-### 🔊 3. Gemini Multimodal Audio/Visual Pipeline (`@google/genai`)
-- **Voice Banter (`gemini-3.8-flash-tts`):** Expressive speech synthesis for the VIP Croupier (`Aoede`) and AI players (`Charon`, `Fenrir`, `Puck`, `Kore`) with automatic fallback to persona-tuned Web Speech & formant synthesis.
-- **Adaptive Soundtrack (`lyria-3-clip-preview`):** Transitions seamlessly between late-night Monte Carlo Lounge Jazz (`lounge_jazz`) and pulsing sub-bass showdown suspense (`high_stakes`) during All-In runouts or monster tell alerts.
-- **Physical Casino Foley SFX:** Synthesizes 14-flutter dealer riffle shuffles, band-passed felt card slides, multi-frequency clay chip clinks, double table knocks, and celebratory showdown fanfares.
+The grid shows raise, call and fold frequencies for all 169 starting hands, from `AA` to `72o`. The exploit engine feeds observed tells (such as Bao's `phone_down_monster` or Marcus's `chip_fidget_bluff`) and HUD stats (`VPIP`, `PFR`, `3-Bet`, `AF`) into the calculation, then reports the expected value ($\text{EV}$) difference and grades each decision after you make it.
 
-### 🥽 4. WebXR & Apple Vision Pro (`visionOS`) Spatial Ergonomics
-- **Unified Ray & 25-Joint Hand Tracking (`WebXRManager.ts`):** Supports both optical hand-pinch (`transient-pointer` eye-gaze + thumb-index pinch on Apple Vision Pro & Meta Quest) and desktop pointer raycasting.
-- **Tactile Table Gestures:** Drag & drop clay chips into the glowing golden betting ring to stage bets, hold `Space` or corner-drag hole cards for a shader-driven 3D corner peel, or double-tap the emerald felt to knock and Check.
-- **Native `.USDZ` AR QuickLook:** Includes `/public/models/vip_poker_table.usdz` and `/public/models/vision_pro_ergonomics_report.json` for instant 1:1 room-scale inspection on visionOS Safari.
+### Gemini audio and images (`@google/genai`)
 
----
+`gemini-3.8-flash-tts` voices the croupier (`Aoede`) and the AI players (`Charon`, `Fenrir`, `Puck`, `Kore`). If it is unavailable, the game falls back to Web Speech and formant synthesis tuned per persona.
 
-## 3. System Architecture
+`lyria-3-clip-preview` plays late-night lounge jazz (`lounge_jazz`) and switches to a sub-bass showdown track (`high_stakes`) during all-in runouts or when a monster tell fires.
+
+Casino sound effects are synthesized: a 14-flutter riffle shuffle, band-passed card slides on felt, clay chip clinks at several frequencies, double table knocks, and a fanfare at showdown.
+
+### WebXR and Apple Vision Pro (`visionOS`)
+
+`WebXRManager.ts` handles 25-joint hand tracking and ray input in one place. On Apple Vision Pro and Meta Quest you look and pinch (`transient-pointer` gaze plus thumb-index pinch); on desktop you use the mouse.
+
+At the table you drag chips into the gold betting ring to stage a bet, hold `Space` or drag a card corner to peel your hole cards, and double-tap the felt to check.
+
+`/public/models/vip_poker_table.usdz` and `/public/models/vision_pro_ergonomics_report.json` open in visionOS Safari's AR Quick Look at 1:1 room scale.
+
+## 3. System architecture
 
 ```mermaid
 flowchart LR
@@ -82,26 +85,22 @@ flowchart LR
     CloudRun ==> Client
 ```
 
----
+## 4. Screenshots from the dogfooding run
 
-## 4. Visual Verification & Dogfooding Gallery
+`npm run dogfood` and `npm run verify:ux` check all 7 scripted poker scenarios and 6 camera presets, with 0 console errors, 0 page errors and a 100% pass rate on the spatial collision and sightline checks.
 
-All 7 deterministic poker scenarios and 6 camera presets are verified programmatically via `npm run dogfood` and `npm run verify:ux` (0 console errors, 0 page errors, 100% spatial collider & sightline pass rate):
-
-| Capture | Scenario & Camera Preset |
+| Capture | Scenario and camera preset |
 | :--- | :--- |
-| ![Title Screen](dogfood-captures/00_title_screen_3d_orbit.png) | **00. Title Screen (`3D Orbit`)**: Monte Carlo VIP Suite overview, cast preview, and Vision Pro test suite |
-| ![Seat 0 POV](dogfood-captures/ux_verify_01_seat0_pov_composite_hud.png) | **01. Seat #0 POV (`Composite HUD`)**: Sightline-safe outer-edge HUD with 0% occlusion of Dealer & AI players |
-| ![Macro Card Peel](dogfood-captures/03_macro_card_peel_and_chips.png) | **02. Macro Hole Card Peel**: Physical 3D corner peel revealing `A♠ J♠` and 4 clay chip stacks |
-| ![Bao Scrolling](dogfood-captures/05_bao_phone_scroll_closeup.png) | **03. Bao Scrolling Tell (`Seat #3`)**: Emissive smartphone reel screen, cyan face glow, and tinny audio leak |
-| ![Bao Monster Tell](dogfood-captures/06_bao_phone_down_monster_closeup.png) | **04. Bao Monster Tell (`🔥 Phone Down!`)**: Phone placed flat on the mahogany rail + alert forward posture |
-| ![Showdown](dogfood-captures/09_showdown_royal_flush_composite_hud.png) | **05. Royal Flush Showdown**: 5-card winning levitation with gold emissive glow and spotlight choreography |
+| ![Title Screen](dogfood-captures/00_title_screen_3d_orbit.png) | 00. Title screen (`3D Orbit`): the suite, the cast preview and the Vision Pro test suite |
+| ![Seat 0 POV](dogfood-captures/ux_verify_01_seat0_pov_composite_hud.png) | 01. Seat #0 POV (`Composite HUD`): the edge HUD covers 0% of the dealer and AI players |
+| ![Macro Card Peel](dogfood-captures/03_macro_card_peel_and_chips.png) | 02. Hole card peel, close up: a 3D corner peel showing `A♠ J♠`, with 4 chip stacks |
+| ![Bao Scrolling](dogfood-captures/05_bao_phone_scroll_closeup.png) | 03. Bao scrolling (`Seat #3`): lit phone screen, cyan glow on his face, audible speaker leak |
+| ![Bao Monster Tell](dogfood-captures/06_bao_phone_down_monster_closeup.png) | 04. Bao's monster tell (`🔥 Phone Down!`): phone flat on the rail, Bao leaning forward |
+| ![Showdown](dogfood-captures/09_showdown_royal_flush_composite_hud.png) | 05. Royal flush showdown: the 5 winning cards lift and glow gold under the spotlights |
 
----
+## 5. Running and deploying
 
-## 5. Quick Start & Deployment
-
-### Local Development
+### Local development
 ```bash
 # 1. Install dependencies
 npm install
@@ -113,7 +112,7 @@ export VITE_GEMINI_API_KEY="your-gemini-api-key"
 npm run dev
 ```
 
-### Automated 3D Visual Dogfooding & UX Guideline Verification
+### Visual dogfooding and UX guideline checks
 ```bash
 # Run full 7-scenario + 6-camera spatial audit & screenshot loop
 npm run dogfood
@@ -122,8 +121,8 @@ npm run dogfood
 npm run verify:ux
 ```
 
-### Google Cloud Run Deployment
-The repository includes a production multi-stage `Dockerfile` and `nginx.conf` (configured with correct `.glb`, `.usdz`, and WebXR permissions headers) listening on port `8080`:
+### Deploying to Google Cloud Run
+The repository has a multi-stage `Dockerfile` and an `nginx.conf` that sets the right headers for `.glb`, `.usdz` and WebXR permissions. The container listens on port `8080`:
 ```bash
 gcloud run deploy vr-poker-casino \
   --source . \
