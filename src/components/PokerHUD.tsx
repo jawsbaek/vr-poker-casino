@@ -9,9 +9,6 @@ import {
   Lock,
   Trophy,
   ArrowRight,
-  Sparkles,
-  CheckCircle2,
-  XCircle,
   RefreshCw,
   MessageSquare,
   Music,
@@ -19,7 +16,6 @@ import {
   KeyRound,
   Brain,
   Camera,
-  Bot,
   Layers,
   Sliders,
 } from 'lucide-react';
@@ -37,7 +33,6 @@ import {
   GTOSolverMode,
   HandDecisionRecord,
   CameraPresetId,
-  DogfoodScenarioId,
   ActiveDrawerId,
   Suit,
 } from '../types/poker';
@@ -113,12 +108,6 @@ interface PokerHUDProps {
   lastDecisionRecord: HandDecisionRecord | null;
   cameraPreset: CameraPresetId;
   onSelectCameraPreset: (preset: CameraPresetId) => void;
-  activeScenario: DogfoodScenarioId | null;
-  onLoadScenario: (scenario: DogfoodScenarioId) => void;
-  isAutoPilot: boolean;
-  onToggleAutoPilot: () => void;
-  speedMultiplier: 1 | 2 | 5;
-  onChangeSpeedMultiplier: (speed: 1 | 2 | 5) => void;
   show2DHUD: boolean;
   onToggle2DHUD: () => void;
   debugOverlayEnabled: boolean;
@@ -132,16 +121,6 @@ const CAMERA_PRESETS: { id: CameraPresetId; label: string; short: string }[] = [
   { id: 'bao_tell_closeup', label: 'Bao Phone Tell', short: 'Bao Tell' },
   { id: 'viktor_marcus_rim', label: 'Viktor & Marcus Rim', short: 'Rim Cast' },
   { id: 'dealer_pov', label: 'Dealer Shoe POV', short: 'Dealer' },
-];
-
-const DOGFOOD_SCENARIOS: { id: DogfoodScenarioId; label: string; desc: string }[] = [
-  { id: 'preflop_deal', label: '1. Preflop Deal', desc: 'A♠K♠ dealt, blinds posted' },
-  { id: 'card_peel', label: '2. Hole Card Peel', desc: '3D corner peel + Flop board' },
-  { id: 'chip_drag_stage', label: '3. Staged Bet Ring', desc: '$35 staged inside gold ring' },
-  { id: 'bao_phone_scroll', label: '4. Bao Phone Scroll', desc: 'Dr. Bao scrolling video feed' },
-  { id: 'bao_phone_down_monster', label: '5. 🔥 Bao Phone Down', desc: 'Phone flat on rail + monster raise' },
-  { id: 'all_in_runout', label: '6. 🔥 All-In Spotlight', desc: 'Spotlight on the runout' },
-  { id: 'showdown_multiway', label: '7. 🏆 Showdown Sweep', desc: 'Winning hand rises, pot is swept' },
 ];
 
 export const PokerHUD: React.FC<PokerHUDProps> = ({
@@ -176,12 +155,6 @@ export const PokerHUD: React.FC<PokerHUDProps> = ({
   lastDecisionRecord,
   cameraPreset,
   onSelectCameraPreset,
-  activeScenario,
-  onLoadScenario,
-  isAutoPilot,
-  onToggleAutoPilot,
-  speedMultiplier,
-  onChangeSpeedMultiplier,
   show2DHUD,
   onToggle2DHUD,
   debugOverlayEnabled,

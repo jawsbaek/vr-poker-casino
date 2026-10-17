@@ -21,8 +21,6 @@ import {
   HandDecisionRecord,
   CameraPresetId,
   DogfoodScenarioId,
-  SpatialAuditReport,
-  HudUiAuditReport,
 } from './types/poker';
 import {
   createDeck,
@@ -111,8 +109,6 @@ export const App: React.FC = () => {
   const [speedMultiplier, setSpeedMultiplier] = useState<1 | 2 | 5>(1);
   const [show2DHUD, setShow2DHUD] = useState<boolean>(true);
   const [debugOverlayEnabled, setDebugOverlayEnabled] = useState<boolean>(false);
-  const [spatialAudit, setSpatialAudit] = useState<SpatialAuditReport | null>(null);
-  const [hudUiAudit, setHudUiAudit] = useState<HudUiAuditReport | null>(null);
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
@@ -251,7 +247,6 @@ export const App: React.FC = () => {
       scene.updateSpatialHUD(nextTable, nextPlayers[0], effectivePeek);
       scene.setPeekProgress(effectivePeek ? 1 : 0, nextPlayers[0]?.cards);
       setDrawCalls(scene.getDrawCalls());
-      setSpatialAudit(scene.runSpatialAudit());
     },
     []
   );
@@ -1396,12 +1391,6 @@ export const App: React.FC = () => {
     });
   }, []);
 
-  const handleRefreshSpatialAudit = useCallback(() => {
-    if (sceneRef.current) {
-      setSpatialAudit(sceneRef.current.runSpatialAudit());
-    }
-  }, []);
-
   const handleRefreshHudUiAudit = useCallback(() => {
     const p0 = playersRef.current[0];
     const t = tableRef.current;
@@ -1413,7 +1402,6 @@ export const App: React.FC = () => {
       isPlayerTurn,
       phase: t.phase,
     });
-    setHudUiAudit(report);
     return report;
   }, []);
 
@@ -2217,11 +2205,7 @@ export const App: React.FC = () => {
   // Synchronize 2D vs. 3D Spatial HUD mutual exclusivity with CasinoScene
   useEffect(() => {
     sceneRef.current?.setShow2DHUD(show2DHUD && !isInXR);
-    const timer = window.setTimeout(() => {
-      handleRefreshHudUiAudit();
-    }, 80);
-    return () => window.clearTimeout(timer);
-  }, [show2DHUD, isInXR, table.phase, table.activeSeat, cameraPreset, handleRefreshHudUiAudit]);
+  }, [show2DHUD, isInXR]);
 
   // Expose window.__POKER_DOGFOOD__ for Automated Playwright & Console Visual Verification
   useEffect(() => {
@@ -2253,14 +2237,8 @@ export const App: React.FC = () => {
         setIsAutoPilot(enabled);
         isAutoPilotRef.current = enabled;
       },
-      runSpatialAudit: () => {
-        const report = sceneRef.current?.runSpatialAudit() || null;
-        setSpatialAudit(report);
-        return report;
-      },
-      runHudUiAudit: () => {
-        return handleRefreshHudUiAudit();
-      },
+      runSpatialAudit: () => sceneRef.current?.runSpatialAudit() || null,
+      runHudUiAudit: () => handleRefreshHudUiAudit(),
       getHudUiRules: () => HUD_UI_RULES,
       getCharacterScreenBounds: () => {
         return sceneRef.current?.getCharacterScreenBounds() || [];
@@ -2335,17 +2313,6 @@ export const App: React.FC = () => {
         lastDecisionRecord={lastDecisionRecord}
         cameraPreset={cameraPreset}
         onSelectCameraPreset={handleChangeCameraPreset}
-        activeScenario={activeScenario}
-        onLoadScenario={handleLoadScenario}
-        isAutoPilot={isAutoPilot}
-        onToggleAutoPilot={() => {
-          if (!isAutoPilot && isTitleMode) {
-            handleStartDesktopGame();
-          }
-          setIsAutoPilot((prev) => !prev);
-        }}
-        speedMultiplier={speedMultiplier}
-        onChangeSpeedMultiplier={setSpeedMultiplier}
         show2DHUD={show2DHUD}
         onToggle2DHUD={() =>
           setShow2DHUD((prev) => {
